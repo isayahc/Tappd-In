@@ -42,12 +42,27 @@ async function refreshHistory() {
 }
 function setBusy(value) {
   busy = value;
-  for (const element of document.querySelectorAll('button, textarea')) element.disabled = value;
+  for (const element of document.querySelectorAll('button, textarea, input')) element.disabled = value;
   $('#thinking').hidden = !value;
+}
+function buildRequest(message) {
+  const target = $('#candidate-type').value.trim();
+  const links = $('#reference-links').value.split(/\s+/).map(value => value.trim()).filter(Boolean);
+  if (!target && !links.length) return message;
+  if (links.some(link => !/^https?:\/\//i.test(link))) throw new Error('Reference links must start with http:// or https://.');
+  const request = [
+    'Candidate discovery request:',
+    target ? `Target profile: ${target}` : '',
+    links.length ? `Reference links:\n${links.map(link => `- ${link}`).join('\n')}` : '',
+    message ? `Additional instructions: ${message}` : 'Find public candidates with similar attributes and explain the match.',
+  ].filter(Boolean).join('\n');
+  if (request.length > 4000) throw new Error('Shorten the target description or reference links to fit the request.');
+  return request;
 }
 $('#new-chat').onclick = async () => {
   if (busy) return;
   current = null; render(); $('#error').hidden = true; $('#message').value = '';
+  $('#candidate-type').value = ''; $('#reference-links').value = '';
   try { await refreshHistory(); } catch (error) { showError(error); }
   $('#message').focus();
 };
@@ -61,10 +76,11 @@ $('#message').onkeydown = event => {
 };
 $('#composer').onsubmit = async event => {
   event.preventDefault();
-  const content = $('#message').value.trim();
-  if (!content || busy) return;
+  const message = $('#message').value.trim();
+  if ((!message && !$('#candidate-type').value.trim() && !$('#reference-links').value.trim()) || busy) return;
   $('#error').hidden = true; setBusy(true);
   try {
+    const content = buildRequest(message);
     if (!current) current = await api('/api/chats', {});
     $('#welcome').hidden = true; renderMessage({ role: 'user', content }, true);
     $('#thinking').scrollIntoView({ block: 'nearest' });

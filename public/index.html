@@ -4,6 +4,7 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tappd-In · Chat</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/discovery.css">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23142b28'/%3E%3Cpath d='M8 10h16v4h-6v12h-4V14H8z' fill='%23c7f970'/%3E%3C/svg%3E">
   <script src="/app.js" defer></script>
 </head>
@@ -29,11 +30,20 @@
       </div>
     </section>
     <div class="composer-wrap">
+      <section class="discovery-panel" aria-labelledby="discovery-title">
+        <div class="discovery-heading"><span class="eyebrow">CANDIDATE DISCOVERY</span><span>OPTIONAL</span></div>
+        <h2 id="discovery-title">Find people like this</h2>
+        <label for="candidate-type">Who are you looking for?</label>
+        <input id="candidate-type" type="text" maxlength="500" placeholder="e.g. AI builders working on hardware products">
+        <label for="reference-links">Reference links</label>
+        <textarea id="reference-links" rows="2" maxlength="2500" placeholder="Paste one public profile or project URL per line"></textarea>
+        <p>We’ll use these references to identify attributes and search for comparable public candidates.</p>
+      </section>
       <p id="error" role="alert" hidden></p>
       <p id="thinking" role="status" hidden>Thinking…</p>
       <form id="composer">
         <label class="sr-only" for="message">Message</label>
-        <textarea id="message" placeholder="Ask anything…" rows="2" maxlength="4000" required></textarea>
+        <textarea id="message" placeholder="Ask anything…" rows="2" maxlength="4000"></textarea>
         <div class="composer-bottom"><span>Enter to send · Shift + Enter for a new line</span><button id="send" type="submit" aria-label="Send message">Send ↑</button></div>
       </form>
       <p id="footnote">Conversations stay in this browser’s workspace.</p>

@@ -48,6 +48,8 @@ Open **http://localhost:3000**. Send a message, create another conversation, and
 
 The chat agent is designed to build evidence-backed profiles of potential candidates. It uses OpenCode's `websearch` and `webfetch` tools for person and project research, includes source links and confidence, and separates facts from inference. It cannot read or modify local files, run shell commands, or write files. If you enabled OpenCode server authentication, put matching `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME` values in `.env`. Keys and credentials stay server-side. Each MongoDB chat stores its OpenCode session ID and reuses that session for subsequent replies.
 
+For candidate discovery, use the **Candidate Discovery** panel in the chat. Enter the kind of person you are looking for, optionally paste public reference profile or project URLs one per line, and send a request. The agent will derive observable attributes from the references, search for comparable public candidates, and return a ranked shortlist with evidence and match reasoning.
+
 The UI identifies the browser through an HTTP-only cookie; it is not platform authentication. Clearing the cookie loses access to that browser's old conversations. Use one app process, keep the app on localhost, and add real account authorization before exposing it publicly. Chats are capped at 50 turns, with 4,000 characters per user message.
 
 ### Troubleshooting

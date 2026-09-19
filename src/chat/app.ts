@@ -9,6 +9,7 @@ const messageInput = z.object({ content: z.string().trim().min(1).max(4000) }).s
 const uuid = z.string().uuid();
 const assets: Record<string, [string, string]> = {
   "/": ["index.html", "text/html"], "/app.js": ["app.js", "text/javascript"], "/style.css": ["style.css", "text/css"],
+  "/discovery.css": ["discovery.css", "text/css"],
 };
 export function createChatApp(store: ChatStore, provider: ChatProvider, demo: boolean, port: number) {
   const busy = new Set<string>();
