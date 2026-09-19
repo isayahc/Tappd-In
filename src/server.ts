@@ -38,6 +38,6 @@ async function main() {
   });
 }
 main().catch(() => {
-  console.error("Startup failed. Check .env and MongoDB (docker compose up -d --wait). To try the UI without services: npm run chat:demo");
+  console.error("Startup failed. Check MONGODB_URI, MongoDB connectivity, and .env. Docker is optional; to try the UI without services use: npm run chat:demo");
   process.exitCode = 1;
 });

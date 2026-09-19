@@ -4,7 +4,7 @@
 
 `npm start` serves a localhost UI and JSON endpoints for listing, creating, reading, and sending messages to conversations. MongoDB stores each browser-owned conversation in `chat_conversations`; optimistic version checks prevent overwriting another request. Messages are saved as a user/assistant pair only after a successful reply. On a failed reply, the browser keeps the unsent text for retry. A process crash after model completion but before database persistence can require repeating the generation.
 
-The OpenCode chat adapter uses the installed SDK v2 client, creates a tool-denied session per turn, supplies the existing transcript, and requests session deletion afterward. Deletion is best effort; interrupted cleanup can leave a temporary session on the local OpenCode server. Inference has a 90-second timeout. The SDK transport is tested with a fake server response; local real-model verification requires a working OpenCode server and provider credentials.
+The OpenCode chat adapter uses the installed SDK v2 client and maps each conversation to one tool-denied OpenCode session. The session ID is stored as `opencodeSessionId` on the `chat_conversations` document and reused for later turns; the database transcript remains the application history and is used to identify the latest user message. Inference has a 90-second timeout. The SDK transport and chat persistence mapping are tested with fake server responses; local real-model verification requires a working OpenCode server and provider credentials.
 
 `npm run chat:demo` explicitly uses canned responses and process memory. It never silently substitutes for a failing live provider. Browser cookies separate local histories, but do not constitute a platform identity or production login.
 
