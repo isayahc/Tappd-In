@@ -39,7 +39,7 @@ Set `OPENCODE_MODEL=provider/model` if you want a specific model; otherwise the 
 Start OpenCode in a separate terminal and leave it running:
 
 ```powershell
-opencode serve --hostname 127.0.0.1 --port 4096
+OPENCODE_ENABLE_EXA=1 opencode serve --hostname 127.0.0.1 --port 4096
 ```
 
 Then, from the Tappd-In folder in another terminal, start the OpenCode-backed chat:
@@ -50,14 +50,14 @@ npm run chat:opencode
 
 Open **http://localhost:3000**. Send a message, create another conversation, and reload to resume saved history. The app creates the chat indexes automatically. Stop the app with Ctrl+C. If you used the optional Docker database, stop it with `docker compose stop`.
 
-If you enabled OpenCode server authentication, put matching `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME` values in `.env`. Keys and credentials stay server-side. Each MongoDB chat stores its OpenCode session ID and reuses that session for subsequent replies, with tool permissions denied. No research or profile creation runs from chat.
+The chat agent can use OpenCode's `websearch` and `webfetch` tools for web research. It cannot read or modify local files, run shell commands, or write files. If you enabled OpenCode server authentication, put matching `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME` values in `.env`. Keys and credentials stay server-side. Each MongoDB chat stores its OpenCode session ID and reuses that session for subsequent replies. No profile creation runs from chat.
 
 The UI identifies the browser through an HTTP-only cookie; it is not platform authentication. Clearing the cookie loses access to that browser's old conversations. Use one app process, keep the app on localhost, and add real account authorization before exposing it publicly. Chats are capped at 50 turns, with 4,000 characters per user message.
 
 ### Troubleshooting
 
 - **Startup failed:** check that `MONGODB_URI` is present and reachable, then check whether port 3000 is free. Use `npm run chat:demo` to isolate UI setup without MongoDB.
-- **Reply failed:** make sure `opencode serve` is running, its credentials match, and the selected model works in OpenCode. Your unsent text stays in the composer for retry.
+- **Reply failed:** make sure `OPENCODE_ENABLE_EXA=1 opencode serve` is running, its credentials match, and the selected model works in OpenCode. Your unsent text stays in the composer for retry.
 - **Port conflict:** change `PORT` in `.env`. If changing the OpenCode port, change `OPENCODE_URL` too.
 - **Demo shown unexpectedly:** stop `chat:demo` and use `npm run chat:opencode` for actual model replies.
 

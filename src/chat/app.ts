@@ -52,9 +52,9 @@ export function createChatApp(store: ChatStore, provider: ChatProvider, demo: bo
       busy.add(chat.id);
       try {
         const user = { role: "user" as const, content: input.content };
-        const reply = await provider.reply([...chat.messages, user], chat.opencodeSessionId);
+        const reply = await provider.reply([...chat.messages, user], chat.opencodeSessionId, chat.opencodeSessionVersion);
         const assistant = { role: "assistant" as const, content: reply.content };
-        if (!await store.append(chat, [user, assistant], reply.opencodeSessionId)) return json({ error: "Chat changed in another tab. Reload before sending again." }, 409);
+        if (!await store.append(chat, [user, assistant], reply.opencodeSessionId, reply.opencodeSessionVersion)) return json({ error: "Chat changed in another tab. Reload before sending again." }, 409);
         return json(await store.get(ownerId, chat.id));
       } catch {
         return json({ error: "Reply failed. Check MongoDB, your OpenCode server, and model access, then try again." }, 502);
