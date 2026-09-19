@@ -16,6 +16,7 @@
     "profiles": "node --import tsx --env-file=.env src/cli.ts profiles",
     "start": "node --import tsx --env-file=.env src/server.ts",
     "chat:opencode": "npm start",
+    "chat:start": "bash scripts/start-chat.sh",
     "chat:demo": "node --import tsx src/server.ts --demo"
   },
   "dependencies": {
