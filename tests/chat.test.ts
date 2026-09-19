@@ -82,6 +82,8 @@ test("OpenCode maps a chat to one persistent session", async () => {
     { permission: 'websearch', pattern: '*', action: 'allow' },
     { permission: 'webfetch', pattern: '*', action: 'allow' },
   ]);
+  assert.match(calls[1]?.body.system, /candidate research and profile-building agent/);
+  assert.match(calls[1]?.body.system, /Build and maintain a useful candidate profile/);
   assert.deepEqual(calls[1]?.body.model, { providerID: 'openai', modelID: 'test-model' });
   assert.match(calls[1]?.body.parts[0].text, /Hello/);
   const callCount = calls.length;
