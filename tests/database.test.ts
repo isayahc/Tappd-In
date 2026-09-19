@@ -3,6 +3,7 @@ import test from "node:test";
 import { connectDatabase, ensureIndexes } from "../src/db.js";
 import { enqueueResearch, saveUser } from "../src/store.js";
 import { StubResearchProvider } from "../src/research/provider.js";
+import { MongoChatStore, type Conversation } from "../src/chat/store.js";
 import { runOneJob } from "../src/research/worker.js";
 
 // Only a dedicated, disposable test database is dropped.
@@ -14,6 +15,14 @@ test("MongoDB queue, persistence, deduplication, and failure flow", {
   const db = await connectDatabase();
   try {
     await ensureIndexes(db);
+    const chats = new MongoChatStore(db.database.collection<Conversation>("chat_conversations"));
+    await chats.init();
+    const chat = await chats.create("owner");
+    assert.equal(await chats.append(chat, [{ role: "user", content: "hi" }, { role: "assistant", content: "hello" }]), true);
+    assert.equal(await chats.append(chat, [{ role: "user", content: "stale" }]), false);
+    const reopened = new MongoChatStore(db.database.collection<Conversation>("chat_conversations"));
+    assert.equal((await reopened.get("owner", chat.id))?.messages.length, 2);
+    assert.equal(await reopened.get("someone-else", chat.id), null);
     await saveUser(db, { userId: "test", displayName: "Test", interests: ["robotics"] });
     await assert.rejects(enqueueResearch(db, "missing"));
     await enqueueResearch(db, "test");
@@ -34,7 +43,7 @@ test("MongoDB queue, persistence, deduplication, and failure flow", {
     assert.equal(JSON.stringify(record).includes("private provider detail"), false);
     assert.equal(await db.profiles.countDocuments({ userId: "test" }), 1);
   } finally {
-    await db.client.db().dropDatabase();
+    await db.database.dropDatabase();
     await db.client.close();
   }
 });

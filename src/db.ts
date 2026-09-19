@@ -10,6 +10,7 @@ export async function connectDatabase() {
     const db = client.db(process.env.MONGODB_DB || "tappd_in");
     return {
       client,
+      database: db,
       users: db.collection<PlatformUser>("users"),
       profiles: db.collection<ProspectProfile>("prospect_profiles"),
       jobs: db.collection<ResearchJob>("research_jobs"),

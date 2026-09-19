@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tappd-In · Chat</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23142b28'/%3E%3Cpath d='M8 10h16v4h-6v12h-4V14H8z' fill='%23c7f970'/%3E%3C/svg%3E">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside>
+    <a class="brand" href="/">tappd<span>·</span>in</a>
+    <button id="new-chat" class="new-chat" type="button">＋ New chat</button>
+    <h2>CONVERSATIONS</h2>
+    <nav id="history" aria-label="Conversations"></nav>
+    <div class="sidebar-footer">A place to start something.</div>
+  </aside>
+  <main>
+    <header><span>YOUR WORKSPACE <span class="separator">/</span> <strong>Chat</strong></span><span id="mode">Connecting…</span></header>
+    <div id="messages" role="log" aria-label="Conversation" aria-live="polite"></div>
+    <section id="welcome">
+      <div class="eyebrow">LET’S TALK</div>
+      <h1>What’s on<br>your mind?</h1>
+      <p>Talk through an idea. Find a starting point.<br>Figure out what comes next.</p>
+      <div class="suggestions">
+        <button type="button" data-prompt="Help me sharpen my startup idea. Ask me a question to get started.">Shape an idea <span>↗</span></button>
+        <button type="button" data-prompt="Help me describe the people who would benefit most from my product.">Define my audience <span>↗</span></button>
+        <button type="button" data-prompt="Help me turn a goal into a short action plan.">Make a plan <span>↗</span></button>
+      </div>
+    </section>
+    <div class="composer-wrap">
+      <p id="error" role="alert" hidden></p>
+      <p id="thinking" role="status" hidden>Thinking…</p>
+      <form id="composer">
+        <label class="sr-only" for="message">Message</label>
+        <textarea id="message" placeholder="Ask anything…" rows="2" maxlength="4000" required></textarea>
+        <div class="composer-bottom"><span>Enter to send · Shift + Enter for a new line</span><button id="send" type="submit" aria-label="Send message">Send ↑</button></div>
+      </form>
+      <p id="footnote">Conversations stay in this browser’s workspace.</p>
+    </div>
+  </main>
+</body>
+</html>
