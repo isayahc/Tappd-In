@@ -13,9 +13,9 @@ npm run chat:demo
 
 Open **http://localhost:3000**. Demo replies are clearly labeled and are not AI-generated. History lasts only until the demo server stops.
 
-## Run the real chatbot
+## Run the OpenCode chatbot
 
-Requires MongoDB 8 (Docker Desktop is an option on Windows), and OpenCode installed with a working provider login.
+Requires access to MongoDB through `MONGODB_URI`, and OpenCode installed with a working provider login. Docker is optional and only provides a convenient local MongoDB.
 
 In the Tappd-In folder, run once:
 
@@ -23,10 +23,18 @@ In the Tappd-In folder, run once:
 npm ci
 # Create the file only if you do not already have one:
 if (!(Test-Path .env)) { Copy-Item .env.example .env }
-docker compose up -d --wait
 ```
 
-If using an existing MongoDB instance, set `MONGODB_URI` in `.env` and skip Docker. Set `OPENCODE_MODEL=provider/model` if you want a specific model; otherwise the OpenCode default is used. Run `opencode models` to see available IDs. The provider must already be authenticated in OpenCode (use `opencode auth login` if needed).
+Set your MongoDB connection string in `.env`:
+
+```dotenv
+MONGODB_URI=mongodb+srv://username:password@cluster.example.mongodb.net
+MONGODB_DB=tappd_in
+```
+
+Both `mongodb://` and `mongodb+srv://` connection strings are supported. Do not commit `.env`, since it may contain database credentials. For an optional local MongoDB, run `docker compose up -d --wait`.
+
+Set `OPENCODE_MODEL=provider/model` if you want a specific model; otherwise the OpenCode default is used. Run `opencode models` to see available IDs. The provider must already be authenticated in OpenCode (use `opencode auth login` if needed).
 
 Start OpenCode in a separate terminal and leave it running:
 
@@ -34,34 +42,33 @@ Start OpenCode in a separate terminal and leave it running:
 opencode serve --hostname 127.0.0.1 --port 4096
 ```
 
-Then, from the Tappd-In folder in another terminal:
+Then, from the Tappd-In folder in another terminal, start the OpenCode-backed chat:
 
 ```powershell
-npm start
+npm run chat:opencode
 ```
 
-Open **http://localhost:3000**. Send a message, create another conversation, and reload to resume saved history. `npm start` creates the chat indexes automatically. Stop the app with Ctrl+C. Stop the local database with `docker compose stop` when finished; its named volume retains history.
+Open **http://localhost:3000**. Send a message, create another conversation, and reload to resume saved history. The app creates the chat indexes automatically. Stop the app with Ctrl+C. If you used the optional Docker database, stop it with `docker compose stop`.
 
-If you enabled OpenCode server authentication, put matching `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME` values in `.env`. Keys and credentials stay server-side. The chat uses a temporary OpenCode session for each reply, with tool permissions denied, and supplies the MongoDB transcript as context. No research or profile creation runs from chat.
+If you enabled OpenCode server authentication, put matching `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME` values in `.env`. Keys and credentials stay server-side. Each MongoDB chat stores its OpenCode session ID and reuses that session for subsequent replies, with tool permissions denied. No research or profile creation runs from chat.
 
 The UI identifies the browser through an HTTP-only cookie; it is not platform authentication. Clearing the cookie loses access to that browser's old conversations. Use one app process, keep the app on localhost, and add real account authorization before exposing it publicly. Chats are capped at 50 turns, with 4,000 characters per user message.
 
 ### Troubleshooting
 
-- **Startup failed:** check `.env`, MongoDB connectivity, and whether port 3000 is free. Use `npm run chat:demo` to isolate UI setup.
+- **Startup failed:** check that `MONGODB_URI` is present and reachable, then check whether port 3000 is free. Use `npm run chat:demo` to isolate UI setup without MongoDB.
 - **Reply failed:** make sure `opencode serve` is running, its credentials match, and the selected model works in OpenCode. Your unsent text stays in the composer for retry.
 - **Port conflict:** change `PORT` in `.env`. If changing the OpenCode port, change `OPENCODE_URL` too.
-- **Demo shown unexpectedly:** stop `chat:demo` and use `npm start` for actual model replies.
+- **Demo shown unexpectedly:** stop `chat:demo` and use `npm run chat:opencode` for actual model replies.
 
 ## Research skeleton
 
-Requires Node.js 22+ and Docker Compose (or an existing MongoDB 8 instance).
+Requires Node.js 22+ and access to MongoDB. Docker Compose is optional for local development.
 
 ```sh
 npm ci
 cp .env.example .env
 # PowerShell: Copy-Item .env.example .env
-docker compose up -d --wait
 npm run db:init
 npm run demo
 npm run worker:once
@@ -70,7 +77,7 @@ npm run profiles
 
 The demo inserts a fictional platform user and queues one research job. The worker copies supplied interests into a source-linked draft profile. It does not search the web or call a model. Run the worker before re-running the demo: only one queued/running job per user is allowed.
 
-For an existing MongoDB instance, set `MONGODB_URI` and `MONGODB_DB` in `.env` and skip Docker. The Compose database has no authentication and binds only to localhost for local development; configure credentials and access controls for hosted environments. Keep `.env` out of git.
+Set `MONGODB_URI` and `MONGODB_DB` in `.env` before running the commands. Docker Compose can be used for a local database but is not required. The Compose database has no authentication and binds only to localhost for local development; configure credentials and access controls for hosted environments. Keep `.env` out of git.
 
 ## Structure
 

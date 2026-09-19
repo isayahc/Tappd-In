@@ -15,6 +15,7 @@
     "worker:once": "node --import tsx --env-file=.env src/cli.ts worker",
     "profiles": "node --import tsx --env-file=.env src/cli.ts profiles",
     "start": "node --import tsx --env-file=.env src/server.ts",
+    "chat:opencode": "npm start",
     "chat:demo": "node --import tsx src/server.ts --demo"
   },
   "dependencies": {

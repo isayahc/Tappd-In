@@ -34,6 +34,6 @@ async function main() {
   }
 }
 main().catch(() => {
-  console.error("Command failed. Check MongoDB connectivity, .env, and pending jobs. OpenCode is not wired yet.");
+  console.error("Command failed. Check MONGODB_URI, MongoDB connectivity, .env, and pending jobs.");
   process.exitCode = 1;
 });

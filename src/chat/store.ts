@@ -4,12 +4,13 @@ import type { Collection } from "mongodb";
 export interface Message { role: "user" | "assistant"; content: string }
 export interface Conversation {
   id: string; ownerId: string; title: string; messages: Message[]; updatedAt: Date; version: number;
+  opencodeSessionId?: string;
 }
 export interface ChatStore {
   list(ownerId: string): Promise<Pick<Conversation, "id" | "title" | "updatedAt">[]>;
   get(ownerId: string, id: string): Promise<Conversation | null>;
   create(ownerId: string): Promise<Conversation>;
-  append(chat: Conversation, messages: Message[]): Promise<boolean>;
+  append(chat: Conversation, messages: Message[], opencodeSessionId?: string): Promise<boolean>;
 }
 const newChat = (ownerId: string): Conversation => ({
   id: randomUUID(), ownerId, title: "New conversation", messages: [], updatedAt: new Date(), version: 0,
@@ -30,10 +31,14 @@ export class MongoChatStore implements ChatStore {
     await this.collection.insertOne(chat);
     return chat;
   }
-  async append(chat: Conversation, messages: Message[]) {
+  async append(chat: Conversation, messages: Message[], opencodeSessionId?: string) {
     const result = await this.collection.updateOne({ id: chat.id, ownerId: chat.ownerId, version: chat.version }, {
       $push: { messages: { $each: messages } },
-      $set: { title: chat.messages.length ? chat.title : messages[0]!.content.slice(0, 70), updatedAt: new Date() },
+      $set: {
+        title: chat.messages.length ? chat.title : messages[0]!.content.slice(0, 70),
+        updatedAt: new Date(),
+        ...(opencodeSessionId ? { opencodeSessionId } : {}),
+      },
       $inc: { version: 1 },
     });
     return result.modifiedCount === 1;
@@ -53,10 +58,11 @@ export class MemoryChatStore implements ChatStore {
   async create(ownerId: string) {
     const chat = newChat(ownerId); this.chats.set(chat.id, chat); return structuredClone(chat);
   }
-  async append(chat: Conversation, messages: Message[]) {
+  async append(chat: Conversation, messages: Message[], opencodeSessionId?: string) {
     const current = this.chats.get(chat.id);
     if (!current || current.ownerId !== chat.ownerId || current.version !== chat.version) return false;
     current.title = current.messages.length ? current.title : messages[0]!.content.slice(0, 70);
+    if (opencodeSessionId) current.opencodeSessionId = opencodeSessionId;
     current.messages.push(...messages); current.version++; current.updatedAt = new Date();
     return true;
   }

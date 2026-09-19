@@ -32,7 +32,7 @@ test("chat creates, sends, reloads history, and isolates browser owners", async 
 test("failed replies preserve history and allow retry; input and origin are checked", async () => {
   const store = new MemoryChatStore();
   let fail = true;
-  const app = createChatApp(store, { reply: async () => { if (fail) throw new Error("secret"); return "OK"; } }, false, 3000);
+  const app = createChatApp(store, { reply: async () => { if (fail) throw new Error("secret"); return { content: "OK" }; } }, false, 3000);
   const request = browser(app);
   const chat = await (await request('/api/chats', {})).json();
   const path = `/api/chats/${chat.id}/messages`;
@@ -48,7 +48,22 @@ test("failed replies preserve history and allow retry; input and origin are chec
     method: 'POST', headers: { origin: 'https://evil.test', 'content-type': 'application/json' }, body: '{}',
   }))).status, 403);
 });
-test("OpenCode sends transcript with tools denied and cleans up its session", async () => {
+test("chat persistence stores the OpenCode session mapping", async () => {
+  const calls: (string | undefined)[] = [];
+  const app = createChatApp(new MemoryChatStore(), {
+    reply: async (_messages, sessionId) => {
+      calls.push(sessionId);
+      return { content: "OK", opencodeSessionId: sessionId || "session-for-chat" };
+    },
+  }, false, 3000);
+  const request = browser(app);
+  const chat = await (await request('/api/chats', {})).json();
+  await request(`/api/chats/${chat.id}/messages`, { content: "first" });
+  await request(`/api/chats/${chat.id}/messages`, { content: "second" });
+  assert.deepEqual(calls, [undefined, "session-for-chat"]);
+  assert.equal((await (await request(`/api/chats/${chat.id}`)).json()).opencodeSessionId, "session-for-chat");
+});
+test("OpenCode maps a chat to one persistent session", async () => {
   const calls: { path: string; method: string; body: any }[] = [];
   const fakeFetch: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
@@ -56,13 +71,19 @@ test("OpenCode sends transcript with tools denied and cleans up its session", as
     const body = request.method === 'POST' ? await request.json() : null;
     calls.push({ path, method: request.method, body });
     if (path.endsWith('/message')) return Response.json({ info: {}, parts: [{ type: 'text', text: 'Hello from model' }] });
-    if (request.method === 'DELETE') return Response.json(true);
     return Response.json({ id: 'session-test' });
   };
   const provider = new OpenCodeChatProvider({ OPENCODE_URL: 'http://localhost:4096', OPENCODE_MODEL: 'openai/test-model' }, fakeFetch);
-  assert.equal(await provider.reply([{ role: 'user', content: 'Hello' }]), 'Hello from model');
+  const first = await provider.reply([{ role: 'user', content: 'Hello' }]);
+  assert.equal(first.content, 'Hello from model');
+  assert.equal(first.opencodeSessionId, 'session-test');
   assert.deepEqual(calls[0]?.body.permission, [{ permission: '*', pattern: '*', action: 'deny' }]);
   assert.deepEqual(calls[1]?.body.model, { providerID: 'openai', modelID: 'test-model' });
   assert.match(calls[1]?.body.parts[0].text, /Hello/);
-  assert.equal(calls.at(-1)?.method, 'DELETE');
+  const callCount = calls.length;
+  const second = await provider.reply([{ role: 'user', content: 'Hello' }, { role: 'assistant', content: 'Hello from model' }, { role: 'user', content: 'Again' }], first.opencodeSessionId);
+  assert.equal(second.opencodeSessionId, 'session-test');
+  assert.equal(calls.length, callCount + 1);
+  assert.equal(calls.at(-1)?.path.endsWith('/message'), true);
+  assert.equal(calls.at(-1)?.body.parts[0].text, JSON.stringify({ role: 'user', content: 'Again' }));
 });
