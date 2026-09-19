@@ -56,10 +56,12 @@ export function createChatApp(store: ChatStore, provider: ChatProvider, demo: bo
         const assistant = { role: "assistant" as const, content: reply.content };
         if (!await store.append(chat, [user, assistant], reply.opencodeSessionId, reply.opencodeSessionVersion)) return json({ error: "Chat changed in another tab. Reload before sending again." }, 409);
         return json(await store.get(ownerId, chat.id));
-      } catch {
+      } catch (error) {
+        console.error("[chat] reply failed", { chatId: chat.id, error: error instanceof Error ? error.message : String(error) });
         return json({ error: "Reply failed. Check MongoDB, your OpenCode server, and model access, then try again." }, 502);
       } finally { busy.delete(chat.id); }
-    } catch {
+    } catch (error) {
+      console.error("[chat] request failed", { path: url.pathname, error: error instanceof Error ? error.message : String(error) });
       return json({ error: "Storage is unavailable. Check MongoDB and try again." }, 503);
     }
   };

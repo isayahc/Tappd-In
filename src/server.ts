@@ -28,7 +28,10 @@ async function main() {
       }));
       res.writeHead(response.status, Object.fromEntries(response.headers));
       res.end(Buffer.from(await response.arrayBuffer()));
-    } catch { res.writeHead(500).end("Request failed"); }
+    } catch (error) {
+      console.error("[http] request failed", { method: req.method, path: req.url, error: error instanceof Error ? error.message : String(error) });
+      res.writeHead(500).end("Request failed");
+    }
   });
   server.requestTimeout = 120000;
   server.listen(port, "127.0.0.1", () => console.log(`Tappd-In: http://localhost:${port}${demo ? " (demo: no AI, temporary history)" : " (OpenCode + MongoDB)"}`));
@@ -37,7 +40,8 @@ async function main() {
     server.close(() => { void db?.client.close(); });
   });
 }
-main().catch(() => {
+main().catch((error) => {
+  console.error("[startup] failed", error instanceof Error ? error.message : String(error));
   console.error("Startup failed. Check MONGODB_URI, MongoDB connectivity, and .env. Docker is optional; to try the UI without services use: npm run chat:demo");
   process.exitCode = 1;
 });

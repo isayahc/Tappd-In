@@ -33,7 +33,8 @@ async function main() {
     await db.client.close();
   }
 }
-main().catch(() => {
+main().catch((error) => {
+  console.error("[cli] failed", error instanceof Error ? error.message : String(error));
   console.error("Command failed. Check MONGODB_URI, MongoDB connectivity, .env, and pending jobs.");
   process.exitCode = 1;
 });
