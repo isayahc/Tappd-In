@@ -57,8 +57,12 @@ export function createChatApp(store: ChatStore, provider: ChatProvider, demo: bo
         if (!await store.append(chat, [user, assistant], reply.opencodeSessionId, reply.opencodeSessionVersion)) return json({ error: "Chat changed in another tab. Reload before sending again." }, 409);
         return json(await store.get(ownerId, chat.id));
       } catch (error) {
-        console.error("[chat] reply failed", { chatId: chat.id, error: error instanceof Error ? error.message : String(error) });
-        return json({ error: "Reply failed. Check MongoDB, your OpenCode server, and model access, then try again." }, 502);
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("[chat] reply failed", { chatId: chat.id, error: message });
+        const userError = message.startsWith("OpenCode server is unreachable")
+          ? message
+          : "Reply failed. Check MongoDB, your OpenCode server, and model access, then try again.";
+        return json({ error: userError }, 502);
       } finally { busy.delete(chat.id); }
     } catch (error) {
       console.error("[chat] request failed", { path: url.pathname, error: error instanceof Error ? error.message : String(error) });

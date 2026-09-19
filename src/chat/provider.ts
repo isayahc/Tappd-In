@@ -10,10 +10,12 @@ export class DemoChatProvider implements ChatProvider {
 }
 export class OpenCodeChatProvider implements ChatProvider {
   private client;
+  private baseUrl: string;
   private model?: { providerID: string; modelID: string };
   constructor(env = process.env, fetcher: typeof fetch = fetch) {
     const url = new URL(env.OPENCODE_URL || "http://127.0.0.1:4096");
     if (!["http:", "https:"].includes(url.protocol)) throw new Error("OPENCODE_URL must use HTTP or HTTPS");
+    this.baseUrl = url.origin;
     if (env.OPENCODE_MODEL) {
       const slash = env.OPENCODE_MODEL.indexOf("/");
       if (slash < 1 || slash === env.OPENCODE_MODEL.length - 1) throw new Error("OPENCODE_MODEL must be provider/model");
@@ -57,7 +59,13 @@ export class OpenCodeChatProvider implements ChatProvider {
       console.info("[opencode] chat session replied", { sessionID, answerLength: answer.length });
       return { content: answer, opencodeSessionId: sessionID, opencodeSessionVersion: 2 };
     } catch (error) {
-      console.error("[opencode] chat request failed", { sessionID, error: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "fetch failed") {
+        const unavailable = `OpenCode server is unreachable at ${this.baseUrl}. Start it with: OPENCODE_ENABLE_EXA=1 opencode serve --hostname 127.0.0.1 --port 4096`;
+        console.error("[opencode] server unreachable", { baseUrl: this.baseUrl, sessionID });
+        throw new Error(unavailable);
+      }
+      console.error("[opencode] chat request failed", { sessionID, error: message });
       throw error;
     } finally {
       if (created && signal.aborted) {
