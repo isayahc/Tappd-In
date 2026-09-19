@@ -53,7 +53,7 @@ test("chat persistence stores the OpenCode session mapping", async () => {
   const app = createChatApp(new MemoryChatStore(), {
     reply: async (_messages, sessionId) => {
       calls.push(sessionId);
-      return { content: "OK", opencodeSessionId: sessionId || "session-for-chat" };
+      return { content: "OK", opencodeSessionId: sessionId || "session-for-chat", opencodeSessionVersion: 2 };
     },
   }, false, 3000);
   const request = browser(app);
@@ -77,11 +77,15 @@ test("OpenCode maps a chat to one persistent session", async () => {
   const first = await provider.reply([{ role: 'user', content: 'Hello' }]);
   assert.equal(first.content, 'Hello from model');
   assert.equal(first.opencodeSessionId, 'session-test');
-  assert.deepEqual(calls[0]?.body.permission, [{ permission: '*', pattern: '*', action: 'deny' }]);
+  assert.deepEqual(calls[0]?.body.permission, [
+    { permission: '*', pattern: '*', action: 'deny' },
+    { permission: 'websearch', pattern: '*', action: 'allow' },
+    { permission: 'webfetch', pattern: '*', action: 'allow' },
+  ]);
   assert.deepEqual(calls[1]?.body.model, { providerID: 'openai', modelID: 'test-model' });
   assert.match(calls[1]?.body.parts[0].text, /Hello/);
   const callCount = calls.length;
-  const second = await provider.reply([{ role: 'user', content: 'Hello' }, { role: 'assistant', content: 'Hello from model' }, { role: 'user', content: 'Again' }], first.opencodeSessionId);
+  const second = await provider.reply([{ role: 'user', content: 'Hello' }, { role: 'assistant', content: 'Hello from model' }, { role: 'user', content: 'Again' }], first.opencodeSessionId, first.opencodeSessionVersion);
   assert.equal(second.opencodeSessionId, 'session-test');
   assert.equal(calls.length, callCount + 1);
   assert.equal(calls.at(-1)?.path.endsWith('/message'), true);
