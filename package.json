@@ -1,0 +1,27 @@
+{
+  "name": "tappd-in",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "db:init": "node --import tsx --env-file=.env src/cli.ts init",
+    "demo": "node --import tsx --env-file=.env src/cli.ts demo",
+    "worker:once": "node --import tsx --env-file=.env src/cli.ts worker",
+    "profiles": "node --import tsx --env-file=.env src/cli.ts profiles"
+  },
+  "dependencies": {
+    "mongodb": "^6.20.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
