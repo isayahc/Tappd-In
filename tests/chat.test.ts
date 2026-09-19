@@ -1,0 +1,68 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createChatApp } from "../src/chat/app.js";
+import { DemoChatProvider, OpenCodeChatProvider } from "../src/chat/provider.js";
+import { MemoryChatStore } from "../src/chat/store.js";
+
+function browser(app: ReturnType<typeof createChatApp>) {
+  let cookie = "";
+  return async (path: string, body?: unknown) => {
+    const response = await app(new Request(`http://localhost:3000${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { cookie, origin: "http://localhost:3000", "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }));
+    cookie = response.headers.get("set-cookie")?.split(";")[0] || cookie;
+    return response;
+  };
+}
+test("chat creates, sends, reloads history, and isolates browser owners", async () => {
+  const app = createChatApp(new MemoryChatStore(), new DemoChatProvider(), true, 3000);
+  const request = browser(app);
+  const created = await (await request("/api/chats", {})).json();
+  const reply = await request(`/api/chats/${created.id}/messages`, { content: "Hello" });
+  assert.equal(reply.status, 200);
+  const chat = await reply.json();
+  assert.equal(chat.messages.length, 2);
+  assert.match(chat.messages[1].content, /Demo response/);
+  assert.equal((await (await request(`/api/chats/${created.id}`)).json()).messages.length, 2);
+  assert.equal((await (await request('/api/chats')).json())[0].title, "Hello");
+  assert.equal((await browser(app)(`/api/chats/${created.id}`)).status, 404);
+});
+test("failed replies preserve history and allow retry; input and origin are checked", async () => {
+  const store = new MemoryChatStore();
+  let fail = true;
+  const app = createChatApp(store, { reply: async () => { if (fail) throw new Error("secret"); return "OK"; } }, false, 3000);
+  const request = browser(app);
+  const chat = await (await request('/api/chats', {})).json();
+  const path = `/api/chats/${chat.id}/messages`;
+  assert.equal((await request(path, { content: " " })).status, 400);
+  assert.equal((await request(path, { content: "x".repeat(4001) })).status, 400);
+  const error = await request(path, { content: "hello" });
+  assert.equal(error.status, 502); assert.doesNotMatch(await error.text(), /secret/);
+  assert.equal((await (await request(`/api/chats/${chat.id}`)).json()).messages.length, 0);
+  fail = false;
+  assert.equal((await request(path, { content: "retry" })).status, 200);
+  assert.equal((await app(new Request('http://evil.test:3000/api/chats'))).status, 403);
+  assert.equal((await app(new Request('http://localhost:3000/api/chats', {
+    method: 'POST', headers: { origin: 'https://evil.test', 'content-type': 'application/json' }, body: '{}',
+  }))).status, 403);
+});
+test("OpenCode sends transcript with tools denied and cleans up its session", async () => {
+  const calls: { path: string; method: string; body: any }[] = [];
+  const fakeFetch: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    const path = new URL(request.url).pathname;
+    const body = request.method === 'POST' ? await request.json() : null;
+    calls.push({ path, method: request.method, body });
+    if (path.endsWith('/message')) return Response.json({ info: {}, parts: [{ type: 'text', text: 'Hello from model' }] });
+    if (request.method === 'DELETE') return Response.json(true);
+    return Response.json({ id: 'session-test' });
+  };
+  const provider = new OpenCodeChatProvider({ OPENCODE_URL: 'http://localhost:4096', OPENCODE_MODEL: 'openai/test-model' }, fakeFetch);
+  assert.equal(await provider.reply([{ role: 'user', content: 'Hello' }]), 'Hello from model');
+  assert.deepEqual(calls[0]?.body.permission, [{ permission: '*', pattern: '*', action: 'deny' }]);
+  assert.deepEqual(calls[1]?.body.model, { providerID: 'openai', modelID: 'test-model' });
+  assert.match(calls[1]?.body.parts[0].text, /Hello/);
+  assert.equal(calls.at(-1)?.method, 'DELETE');
+});

@@ -13,9 +13,12 @@
     "db:init": "node --import tsx --env-file=.env src/cli.ts init",
     "demo": "node --import tsx --env-file=.env src/cli.ts demo",
     "worker:once": "node --import tsx --env-file=.env src/cli.ts worker",
-    "profiles": "node --import tsx --env-file=.env src/cli.ts profiles"
+    "profiles": "node --import tsx --env-file=.env src/cli.ts profiles",
+    "start": "node --import tsx --env-file=.env src/server.ts",
+    "chat:demo": "node --import tsx src/server.ts --demo"
   },
   "dependencies": {
+    "@opencode-ai/sdk": "^1.18.31",
     "mongodb": "^6.20.0",
     "zod": "^3.25.76"
   },

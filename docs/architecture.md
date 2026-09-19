@@ -1,6 +1,14 @@
 # Research foundation
 
-## Current behavior
+## Browser chat
+
+`npm start` serves a localhost UI and JSON endpoints for listing, creating, reading, and sending messages to conversations. MongoDB stores each browser-owned conversation in `chat_conversations`; optimistic version checks prevent overwriting another request. Messages are saved as a user/assistant pair only after a successful reply. On a failed reply, the browser keeps the unsent text for retry. A process crash after model completion but before database persistence can require repeating the generation.
+
+The OpenCode chat adapter uses the installed SDK v2 client, creates a tool-denied session per turn, supplies the existing transcript, and requests session deletion afterward. Deletion is best effort; interrupted cleanup can leave a temporary session on the local OpenCode server. Inference has a 90-second timeout. The SDK transport is tested with a fake server response; local real-model verification requires a working OpenCode server and provider credentials.
+
+`npm run chat:demo` explicitly uses canned responses and process memory. It never silently substitutes for a failing live provider. Browser cookies separate local histories, but do not constitute a platform identity or production login.
+
+## Research skeleton behavior
 
 A platform user is saved with an application-owned `userId`, display name, headline, optional company, stated interests, and public profile links. `enqueueResearch` creates a durable job. The worker atomically claims the oldest queued job and hands the user to a provider. Validated output becomes a draft prospect profile; completion or a sanitized failure code is stored on the job.
 
