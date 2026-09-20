@@ -25,15 +25,37 @@ export interface GitHubInstallationRepository {
   archived: boolean;
 }
 
+export interface GitHubInstallationPermissions {
+  contents?: "read" | "write";
+  pull_requests?: "read" | "write";
+  issues?: "read" | "write";
+  checks?: "read" | "write";
+  actions?: "read" | "write";
+  statuses?: "read" | "write";
+}
+
+export interface GitHubRepositoryCredential {
+  token: string;
+  expiresAt: Date;
+}
+
 export interface GitHubAppRepositoryClient {
   listInstallationRepositories(installationId: number): Promise<GitHubInstallationRepository[]>;
+}
+
+export interface GitHubInstallationCredentialMinter {
+  mintRepositoryCredential(
+    installationId: number,
+    repositoryId: number,
+    permissions: GitHubInstallationPermissions,
+  ): Promise<GitHubRepositoryCredential>;
 }
 
 function base64url(value: string | Buffer) {
   return Buffer.from(value).toString("base64url");
 }
 
-export class GitHubAppClient implements GitHubAppRepositoryClient {
+export class GitHubAppClient implements GitHubAppRepositoryClient, GitHubInstallationCredentialMinter {
   constructor(
     private appId: string,
     private privateKey: string,
@@ -57,7 +79,13 @@ export class GitHubAppClient implements GitHubAppRepositoryClient {
     return `${signingInput}.${signature}`;
   }
 
-  private async installationToken(installationId: number) {
+  private async installationToken(
+    installationId: number,
+    scope?: {
+      repositoryIds?: number[];
+      permissions?: GitHubInstallationPermissions;
+    },
+  ) {
     const response = await this.request(
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
       {
@@ -65,17 +93,37 @@ export class GitHubAppClient implements GitHubAppRepositoryClient {
         headers: {
           Accept: "application/vnd.github+json",
           Authorization: `Bearer ${this.jwt()}`,
+          "Content-Type": "application/json",
           "X-GitHub-Api-Version": "2026-03-10",
         },
+        body: scope ? JSON.stringify({
+          ...(scope.repositoryIds ? { repository_ids: scope.repositoryIds } : {}),
+          ...(scope.permissions ? { permissions: scope.permissions } : {}),
+        }) : undefined,
       },
     );
     if (response.status === 404) throw new Error("GITHUB_INSTALLATION_UNAVAILABLE");
     if (!response.ok) throw new Error("GitHub installation token request failed");
-    return tokenResponse.parse(await response.json()).token;
+    const parsed = tokenResponse.parse(await response.json());
+    return {
+      token: parsed.token,
+      expiresAt: new Date(parsed.expires_at),
+    };
+  }
+
+  async mintRepositoryCredential(
+    installationId: number,
+    repositoryId: number,
+    permissions: GitHubInstallationPermissions,
+  ) {
+    return this.installationToken(installationId, {
+      repositoryIds: [repositoryId],
+      permissions,
+    });
   }
 
   async listInstallationRepositories(installationId: number) {
-    const token = await this.installationToken(installationId);
+    const credential = await this.installationToken(installationId);
     const repositories: GitHubInstallationRepository[] = [];
     for (let page = 1; page <= 100; page++) {
       const response = await this.request(
@@ -83,7 +131,7 @@ export class GitHubAppClient implements GitHubAppRepositoryClient {
         {
           headers: {
             Accept: "application/vnd.github+json",
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${credential.token}`,
             "X-GitHub-Api-Version": "2026-03-10",
           },
         },
