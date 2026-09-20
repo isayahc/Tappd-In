@@ -26,7 +26,7 @@ export async function connectDatabase() {
       githubInstallationStates: db.collection<GitHubInstallationState>("github_installation_states"),
       connectedRepositories: db.collection<ConnectedRepository>("connected_repositories"),
       githubWebhookDeliveries: db.collection<GitHubWebhookDelivery>("github_webhook_deliveries"),
-      agentJobAuthorizations: db.collection<AgentJobAuthorization>("agent_job_authorizations"),
+      agentJobs: db.collection<AgentJobAuthorization>("agent_jobs"),
     };
   } catch (error) {
     await client.close();
