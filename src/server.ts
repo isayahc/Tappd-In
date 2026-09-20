@@ -55,7 +55,7 @@ async function main() {
         ? new MongoConnectedRepositoryStore(db.connectedRepositories)
         : new MemoryConnectedRepositoryStore();
       const agentJobStore = db
-        ? new MongoAgentJobAuthorizationStore(db.agentJobAuthorizations)
+        ? new MongoAgentJobAuthorizationStore(db.agentJobs)
         : new MemoryAgentJobAuthorizationStore();
       const repositoryClient = githubAppClientFromEnv() || undefined;
       const credentialBroker = repositoryClient
