@@ -8,7 +8,7 @@ import type { ConnectedRepositoryStore } from "./repositories.js";
 const DELIVERY_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 const installationPayload = z.object({
-  action: z.enum(["created", "deleted", "suspend", "unsuspend"]),
+  action: z.string().min(1),
   installation: z.object({ id: z.number().int().positive() }),
 });
 
@@ -149,9 +149,9 @@ export async function handleGitHubWebhook(
       } else if (parsed.action === "suspend") {
         await runtime.installationStore.setInstallationState(installationId, "suspended");
         await runtime.repositoryStore.disconnectInstallation(installationId);
-      } else {
+      } else if (parsed.action === "created" || parsed.action === "unsuspend") {
         await runtime.installationStore.setInstallationState(installationId, "active");
-        if (parsed.action === "unsuspend") await reconcileInstallation(runtime, installationId);
+        await reconcileInstallation(runtime, installationId);
       }
     } else if (event === "installation_repositories") {
       const parsed = installationRepositoriesPayload.parse(payload);
