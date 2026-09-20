@@ -1,4 +1,5 @@
 import { MongoClient } from "mongodb";
+import type { AuthSession, GitHubIdentity, OAuthState } from "./auth/store.js";
 import type { PlatformUser, ProspectProfile, ResearchJob } from "./models.js";
 
 export async function connectDatabase() {
@@ -14,6 +15,9 @@ export async function connectDatabase() {
       users: db.collection<PlatformUser>("users"),
       profiles: db.collection<ProspectProfile>("prospect_profiles"),
       jobs: db.collection<ResearchJob>("research_jobs"),
+      githubIdentities: db.collection<GitHubIdentity>("github_identities"),
+      authSessions: db.collection<AuthSession>("auth_sessions"),
+      oauthStates: db.collection<OAuthState>("oauth_states"),
     };
   } catch (error) {
     await client.close();
@@ -28,7 +32,6 @@ export async function ensureIndexes(db: Database) {
     db.profiles.createIndex({ userId: 1 }, { unique: true }),
     db.jobs.createIndex({ jobId: 1 }, { unique: true }),
     db.jobs.createIndex({ status: 1, createdAt: 1 }),
-    // One active research job per platform user.
     db.jobs.createIndex({ userId: 1 }, {
       unique: true, partialFilterExpression: { status: { $in: ["queued", "running"] } },
     }),
