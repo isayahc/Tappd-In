@@ -1,5 +1,6 @@
 import { MongoClient } from "mongodb";
 import type { AuthSession, GitHubIdentity, OAuthState } from "./auth/store.js";
+import type { GitHubInstallationLink, GitHubInstallationState } from "./github/installations.js";
 import type { PlatformUser, ProspectProfile, ResearchJob } from "./models.js";
 
 export async function connectDatabase() {
@@ -18,6 +19,8 @@ export async function connectDatabase() {
       githubIdentities: db.collection<GitHubIdentity>("github_identities"),
       authSessions: db.collection<AuthSession>("auth_sessions"),
       oauthStates: db.collection<OAuthState>("oauth_states"),
+      githubInstallations: db.collection<GitHubInstallationLink>("github_installations"),
+      githubInstallationStates: db.collection<GitHubInstallationState>("github_installation_states"),
     };
   } catch (error) {
     await client.close();

@@ -18,8 +18,14 @@
   <main>
     <header>
       <span>YOUR WORKSPACE <span class="separator">/</span> <strong>Chat</strong></span>
-      <div class="header-actions"><span id="mode">Connecting…</span><span id="account" hidden></span><button id="logout" class="text-button" type="button" hidden>Sign out</button></div>
+      <div class="header-actions">
+        <span id="mode">Connecting…</span>
+        <a id="connect-github" class="text-link" href="/github/install" hidden>Connect GitHub repos</a>
+        <span id="account" hidden></span>
+        <button id="logout" class="text-button" type="button" hidden>Sign out</button>
+      </div>
     </header>
+    <p id="github-status" class="workspace-status" role="status" hidden></p>
     <section id="auth-gate" hidden>
       <div class="eyebrow">YOUR WORKSPACE</div>
       <h1>Sign in to<br>get tappd in.</h1>

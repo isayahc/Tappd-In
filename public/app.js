@@ -11,6 +11,24 @@ async function api(path, body) {
   return data;
 }
 function showError(error) { $('#error').textContent = error.message; $('#error').hidden = false; }
+function showGitHubStatus(code) {
+  const messages = {
+    connected: ['GitHub repositories connected. You can update the selected repositories from GitHub at any time.', false],
+    requested: ['GitHub installation access was requested and is waiting for an organization owner to approve it.', false],
+    denied: ['GitHub authorization was cancelled. No repository access was saved.', true],
+    unauthorized: ['That GitHub App installation is not accessible to the signed-in GitHub account.', true],
+    'account-mismatch': ['The GitHub account used to verify the installation does not match your Tappd-In account.', true],
+    permissions: ['The GitHub App installation is missing required permissions: Metadata read, Contents write, and Pull requests write.', true],
+    signin: ['Sign in to Tappd-In before connecting repositories.', true],
+    unavailable: ['GitHub App installation is not configured for this deployment.', true],
+    failed: ['GitHub repository connection could not be verified. Please try again.', true],
+  };
+  const item = messages[code];
+  if (!item) return;
+  $('#github-status').textContent = item[0];
+  $('#github-status').classList.toggle('error', item[1]);
+  $('#github-status').hidden = false;
+}
 function renderMessage(message, pending = false) {
   const article = document.createElement('article');
   article.className = `message ${message.role}${pending ? ' pending' : ''}`;
@@ -105,7 +123,9 @@ async function init() {
   try {
     const status = await api('/api/status');
     $('#mode').textContent = status.demo ? 'Demo · No AI connected' : 'OpenCode';
-    const authProblem = new URLSearchParams(window.location.search).get('auth');
+    const params = new URLSearchParams(window.location.search);
+    const authProblem = params.get('auth');
+    const githubResult = params.get('github');
     if (status.authEnabled) {
       const meResponse = await fetch('/api/me');
       if (meResponse.status === 401) {
@@ -116,6 +136,7 @@ async function init() {
             : undefined;
         setAuthBlocked(true, message);
         $('#mode').textContent = 'Sign in required';
+        if (githubResult) showGitHubStatus(githubResult);
         return;
       }
       const me = await meResponse.json();
@@ -124,6 +145,12 @@ async function init() {
       $('#account').textContent = `@${me.githubLogin}`;
       $('#account').hidden = false;
       $('#logout').hidden = false;
+      if (status.githubAppEnabled) {
+        $('#connect-github').hidden = false;
+        const installations = await api('/api/github/installations');
+        if (installations.length) $('#connect-github').textContent = `GitHub repos · ${installations.length} connected`;
+      }
+      if (githubResult) showGitHubStatus(githubResult);
       $('#footnote').textContent = status.demo ? 'Demo replies only. Signed-in history resets when the server stops.' : 'History saved to your Tappd-In account. AI can make mistakes.';
     } else {
       setAuthBlocked(false);
