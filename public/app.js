@@ -2,6 +2,9 @@ const $ = selector => document.querySelector(selector);
 let current = null;
 let busy = false;
 let authBlocked = false;
+let repositoryMode = false;
+let githubRepoSyncEnabled = false;
+
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -40,23 +43,27 @@ function renderMessage(message, pending = false) {
 function render() {
   $('#messages').replaceChildren();
   for (const message of current?.messages || []) renderMessage(message);
-  $('#welcome').hidden = authBlocked || !!current?.messages.length;
+  $('#welcome').hidden = authBlocked || repositoryMode || !!current?.messages.length;
 }
 function setAuthBlocked(value, message) {
   authBlocked = value;
   $('#auth-gate').hidden = !value;
-  $('#messages').hidden = value;
-  $('.composer-wrap').hidden = value;
+  $('#chat-workspace').hidden = value || repositoryMode;
   if (value) {
     current = null;
     $('#history').replaceChildren();
     $('#welcome').hidden = true;
     if (message) $('#auth-message').textContent = message;
-  } else {
-    $('#messages').hidden = false;
-    $('.composer-wrap').hidden = false;
   }
   setBusy(busy);
+}
+function setRepositoryMode(value) {
+  repositoryMode = value;
+  $('#repo-panel').hidden = !value;
+  $('#chat-workspace').hidden = value || authBlocked;
+  $('#workspace-title').textContent = value ? 'Repositories' : 'Chat';
+  $('#repositories-button').textContent = value ? '← Back to chat' : 'Repositories';
+  if (!value) render();
 }
 async function refreshHistory() {
   const chats = await api('/api/chats');
@@ -68,6 +75,7 @@ async function refreshHistory() {
     button.disabled = busy || authBlocked;
     button.onclick = async () => {
       if (busy || authBlocked) return;
+      setRepositoryMode(false);
       try { current = await api(`/api/chats/${chat.id}`); render(); await refreshHistory(); }
       catch (error) { showError(error); }
     };
@@ -75,17 +83,94 @@ async function refreshHistory() {
   }
   return chats;
 }
+function renderRepositories(repositories) {
+  $('#repository-list').replaceChildren();
+  if (!repositories.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-repositories';
+    empty.textContent = 'No repositories are synced yet. Connect or update the GitHub App installation, then sync.';
+    $('#repository-list').append(empty);
+    return;
+  }
+  for (const repository of repositories) {
+    const row = document.createElement('article');
+    row.className = 'repository-row';
+
+    const info = document.createElement('div');
+    const name = document.createElement('strong');
+    name.textContent = repository.fullName;
+    const meta = document.createElement('span');
+    meta.textContent = `${repository.private ? 'Private' : 'Public'} · default: ${repository.defaultBranch}${repository.archived ? ' · Archived' : ''}`;
+    info.append(name, meta);
+
+    const control = document.createElement('button');
+    control.type = 'button';
+    control.className = repository.agentEnabled ? 'agent-toggle enabled' : 'agent-toggle';
+    control.textContent = repository.archived
+      ? 'Archived'
+      : repository.agentEnabled ? 'Agent access on' : 'Enable agent access';
+    control.disabled = repository.archived;
+    if (repository.archived) control.dataset.alwaysDisabled = 'true';
+    control.onclick = async () => {
+      control.disabled = true;
+      try {
+        const updated = await api(`/api/github/repositories/${repository.repositoryId}/agent-access`, { enabled: !repository.agentEnabled });
+        repository.agentEnabled = updated.agentEnabled;
+        renderRepositories(repositories);
+      } catch (error) {
+        $('#repo-sync-note').textContent = error.message;
+        $('#repo-sync-note').hidden = false;
+        control.disabled = false;
+      }
+    };
+    row.append(info, control);
+    $('#repository-list').append(row);
+  }
+}
+async function loadRepositories() {
+  const repositories = await api('/api/github/repositories');
+  renderRepositories(repositories);
+  return repositories;
+}
 function setBusy(value) {
   busy = value;
   for (const element of document.querySelectorAll('button, textarea')) element.disabled = value || authBlocked;
+  for (const element of document.querySelectorAll('[data-always-disabled="true"]')) element.disabled = true;
+  $('#sync-repositories').disabled = value || authBlocked || !githubRepoSyncEnabled;
   $('#logout').disabled = value;
   $('#thinking').hidden = !value;
 }
 $('#new-chat').onclick = async () => {
   if (busy || authBlocked) return;
+  setRepositoryMode(false);
   current = null; render(); $('#error').hidden = true; $('#message').value = '';
   try { await refreshHistory(); } catch (error) { showError(error); }
   $('#message').focus();
+};
+$('#repositories-button').onclick = async () => {
+  if (busy || authBlocked) return;
+  setRepositoryMode(!repositoryMode);
+  if (repositoryMode) {
+    try { await loadRepositories(); }
+    catch (error) {
+      $('#repo-sync-note').textContent = error.message;
+      $('#repo-sync-note').hidden = false;
+    }
+  }
+};
+$('#sync-repositories').onclick = async () => {
+  if (!githubRepoSyncEnabled || busy) return;
+  $('#repo-sync-note').hidden = true;
+  setBusy(true);
+  try {
+    const repositories = await api('/api/github/repositories/sync', {});
+    renderRepositories(repositories);
+    $('#repo-sync-note').textContent = 'Repository access refreshed from GitHub.';
+    $('#repo-sync-note').hidden = false;
+  } catch (error) {
+    $('#repo-sync-note').textContent = error.message;
+    $('#repo-sync-note').hidden = false;
+  } finally { setBusy(false); }
 };
 for (const button of document.querySelectorAll('[data-prompt]')) button.onclick = () => {
   $('#message').value = button.dataset.prompt; $('#message').focus();
@@ -122,6 +207,7 @@ async function init() {
   setBusy(true);
   try {
     const status = await api('/api/status');
+    githubRepoSyncEnabled = !!status.githubRepoSyncEnabled;
     $('#mode').textContent = status.demo ? 'Demo · No AI connected' : 'OpenCode';
     const params = new URLSearchParams(window.location.search);
     const authProblem = params.get('auth');
@@ -147,8 +233,14 @@ async function init() {
       $('#logout').hidden = false;
       if (status.githubAppEnabled) {
         $('#connect-github').hidden = false;
+        $('#repositories-button').hidden = false;
         const installations = await api('/api/github/installations');
-        if (installations.length) $('#connect-github').textContent = `GitHub repos · ${installations.length} connected`;
+        if (installations.length) $('#connect-github').textContent = `GitHub · ${installations.length} installation${installations.length === 1 ? '' : 's'}`;
+      }
+      $('#sync-repositories').disabled = !githubRepoSyncEnabled;
+      if (!githubRepoSyncEnabled) {
+        $('#repo-sync-note').textContent = 'Add the GitHub App ID and private key to enable repository synchronization.';
+        $('#repo-sync-note').hidden = false;
       }
       if (githubResult) showGitHubStatus(githubResult);
       $('#footnote').textContent = status.demo ? 'Demo replies only. Signed-in history resets when the server stops.' : 'History saved to your Tappd-In account. AI can make mistakes.';

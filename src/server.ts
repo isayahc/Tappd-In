@@ -5,7 +5,9 @@ import { connectDatabase } from "./db.js";
 import { createChatApp, type AuthRuntime, type GitHubAppRuntime } from "./chat/app.js";
 import { DemoChatProvider, OpenCodeChatProvider } from "./chat/provider.js";
 import { MemoryChatStore, MongoChatStore, type Conversation } from "./chat/store.js";
+import { githubAppClientFromEnv } from "./github/app-client.js";
 import { MemoryGitHubInstallationStore, MongoGitHubInstallationStore } from "./github/installations.js";
+import { MemoryConnectedRepositoryStore, MongoConnectedRepositoryStore } from "./github/repositories.js";
 
 function githubAppSlug(env: NodeJS.ProcessEnv = process.env) {
   const slug = env.GITHUB_APP_SLUG?.trim();
@@ -42,11 +44,16 @@ async function main() {
       const installationStore = db
         ? new MongoGitHubInstallationStore(db.githubInstallations, db.githubInstallationStates)
         : new MemoryGitHubInstallationStore();
-      await installationStore.init();
+      const repositoryStore = db
+        ? new MongoConnectedRepositoryStore(db.connectedRepositories)
+        : new MemoryConnectedRepositoryStore();
+      await Promise.all([installationStore.init(), repositoryStore.init()]);
       githubApp = {
         slug,
         store: installationStore,
         verifier: github as GitHubInstallationVerifier,
+        repositoryStore,
+        repositoryClient: githubAppClientFromEnv() || undefined,
       };
     }
   } else if (githubAppSlug()) {
@@ -87,7 +94,7 @@ async function main() {
     }
   });
   server.requestTimeout = 120000;
-  server.listen(port, "127.0.0.1", () => console.log(`Tappd-In: ${origin.origin}${demo ? " (demo: no AI, temporary history)" : " (OpenCode + MongoDB)"}${auth ? " · GitHub auth enabled" : " · local anonymous mode"}${githubApp ? " · GitHub App install enabled" : ""}`));
+  server.listen(port, "127.0.0.1", () => console.log(`Tappd-In: ${origin.origin}${demo ? " (demo: no AI, temporary history)" : " (OpenCode + MongoDB)"}${auth ? " · GitHub auth enabled" : " · local anonymous mode"}${githubApp ? " · GitHub App install enabled" : ""}${githubApp?.repositoryClient ? " · repo sync enabled" : ""}`));
   server.on("error", async () => { console.error("Cannot start server. Check that PORT is available."); await db?.client.close(); process.exitCode = 1; });
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => {
     server.close(() => { void db?.client.close(); });

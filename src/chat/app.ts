@@ -5,11 +5,14 @@ import { z } from "zod";
 import type { GitHubInstallationVerifier } from "../auth/github.js";
 import type { AuthStore, GitHubIdentity } from "../auth/store.js";
 import type { GitHubOAuthClient } from "../auth/github.js";
+import type { GitHubAppRepositoryClient } from "../github/app-client.js";
 import type { GitHubInstallationStore } from "../github/installations.js";
+import type { ConnectedRepositoryStore } from "../github/repositories.js";
 import type { ChatProvider } from "./provider.js";
 import type { ChatStore } from "./store.js";
 
 const messageInput = z.object({ content: z.string().trim().min(1).max(4000) }).strict();
+const agentAccessInput = z.object({ enabled: z.boolean() }).strict();
 const uuid = z.string().uuid();
 const assets: Record<string, [string, string]> = {
   "/": ["index.html", "text/html"], "/app.js": ["app.js", "text/javascript"], "/style.css": ["style.css", "text/css"],
@@ -29,6 +32,8 @@ export interface GitHubAppRuntime {
   slug: string;
   store: GitHubInstallationStore;
   verifier: GitHubInstallationVerifier;
+  repositoryStore: ConnectedRepositoryStore;
+  repositoryClient?: GitHubAppRepositoryClient;
 }
 
 function cookies(request: Request) {
@@ -51,6 +56,24 @@ function installationPermissionsAreSufficient(permissions: Record<string, string
   return (metadata === "read" || metadata === "write")
     && permissions.contents === "write"
     && permissions.pull_requests === "write";
+}
+
+async function syncGitHubRepositories(githubApp: GitHubAppRuntime, userId: string) {
+  if (!githubApp.repositoryClient) throw new Error("GitHub repository synchronization is not configured.");
+  const installations = await githubApp.store.listForUser(userId);
+  for (const installation of installations) {
+    try {
+      const repositories = await githubApp.repositoryClient.listInstallationRepositories(installation.installationId);
+      await githubApp.repositoryStore.syncInstallation(userId, installation.installationId, repositories);
+    } catch (error) {
+      if (error instanceof Error && error.message === "GITHUB_INSTALLATION_UNAVAILABLE") {
+        await githubApp.repositoryStore.syncInstallation(userId, installation.installationId, []);
+        continue;
+      }
+      throw error;
+    }
+  }
+  return githubApp.repositoryStore.listForUser(userId);
 }
 
 export function createChatApp(
@@ -120,6 +143,7 @@ export function createChatApp(
           storage: demo ? "memory" : "mongodb",
           authEnabled: Boolean(auth),
           githubAppEnabled: Boolean(auth && githubApp),
+          githubRepoSyncEnabled: Boolean(auth && githubApp?.repositoryClient),
         });
       }
 
@@ -216,6 +240,10 @@ export function createChatApp(
           if (!verified.installation) return redirect("/?github=unauthorized");
           if (!installationPermissionsAreSufficient(verified.installation.permissions)) return redirect("/?github=permissions");
           await githubApp.store.linkInstallation(user.userId, verified.installation);
+          if (githubApp.repositoryClient) {
+            const repositories = await githubApp.repositoryClient.listInstallationRepositories(installationId);
+            await githubApp.repositoryStore.syncInstallation(user.userId, installationId, repositories);
+          }
           return redirect("/?github=connected");
         } catch (error) {
           console.error("[github-app] installation verification failed", {
@@ -232,6 +260,39 @@ export function createChatApp(
         const user = await sessionUser();
         if (!user) return json({ error: "Sign in with GitHub to continue." }, 401);
         return json(await githubApp.store.listForUser(user.userId));
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/github/repositories") {
+        if (!auth || !githubApp) return json({ error: "GitHub App installation is not configured." }, 503);
+        const user = await sessionUser();
+        if (!user) return json({ error: "Sign in with GitHub to continue." }, 401);
+        return json(await githubApp.repositoryStore.listForUser(user.userId));
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/github/repositories/sync") {
+        if (!auth || !githubApp?.repositoryClient) return json({ error: "GitHub repository synchronization is not configured." }, 503);
+        const user = await sessionUser();
+        if (!user) return json({ error: "Sign in with GitHub to continue." }, 401);
+        try {
+          return json(await syncGitHubRepositories(githubApp, user.userId));
+        } catch (error) {
+          console.error("[github-app] repository sync failed", { userId: user.userId, error: error instanceof Error ? error.message : String(error) });
+          return json({ error: "GitHub repository synchronization failed." }, 502);
+        }
+      }
+
+      const repositoryAccessMatch = /^\/api\/github\/repositories\/(\d+)\/agent-access$/.exec(url.pathname);
+      if (request.method === "POST" && repositoryAccessMatch) {
+        if (!auth || !githubApp) return json({ error: "GitHub App installation is not configured." }, 503);
+        const user = await sessionUser();
+        if (!user) return json({ error: "Sign in with GitHub to continue." }, 401);
+        const repositoryId = Number(repositoryAccessMatch[1]);
+        if (!Number.isSafeInteger(repositoryId) || repositoryId <= 0) return json({ error: "Invalid repository." }, 400);
+        let input;
+        try { input = agentAccessInput.parse(await request.json()); } catch { return json({ error: "Invalid agent access setting." }, 400); }
+        const repository = await githubApp.repositoryStore.setAgentEnabled(user.userId, repositoryId, input.enabled);
+        if (!repository) return json({ error: "Repository not found or no longer available." }, 404);
+        return json(repository);
       }
 
       if (url.pathname.startsWith("/api/chats")) {
