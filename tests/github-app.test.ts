@@ -4,6 +4,7 @@ import { MongoClient } from "mongodb";
 import type { GitHubInstallationVerifier, VerifiedGitHubInstallation } from "../src/auth/github.js";
 import { MemoryAuthStore } from "../src/auth/store.js";
 import { createChatApp } from "../src/chat/app.js";
+import { MemoryConnectedRepositoryStore } from "../src/github/repositories.js";
 import { DemoChatProvider } from "../src/chat/provider.js";
 import { MemoryChatStore } from "../src/chat/store.js";
 import {
@@ -62,7 +63,7 @@ async function authenticatedRuntime() {
       3000,
       { store: auth, github: new FakeOAuth() },
       "http://localhost:3000",
-      { slug: "tappd-in", store: installations, verifier },
+      { slug: "tappd-in", store: installations, verifier, repositoryStore: new MemoryConnectedRepositoryStore() },
     ),
   };
 }
@@ -172,7 +173,7 @@ test("installation verification state is bound to the authenticated Tappd-In use
     3000,
     { store: auth, github: new FakeOAuth() },
     "http://localhost:3000",
-    { slug: "tappd-in", store: installationStore, verifier: new FakeVerifier() },
+    { slug: "tappd-in", store: installationStore, verifier: new FakeVerifier(), repositoryStore: new MemoryConnectedRepositoryStore() },
   );
 
   const setup = await app(new Request("http://localhost:3000/github/setup?installation_id=42", {
