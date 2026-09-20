@@ -80,7 +80,17 @@ Verified installation links are stored in `github_installations`. Add `GITHUB_AP
 
 Connected repositories are stored in `connected_repositories` using GitHub's stable numeric repository ID, installation ID, full name, default branch, visibility/archive state, and an explicit `agentEnabled` flag. A repository removed from the GitHub App selection is marked disconnected on the next sync and its agent access is forcibly disabled. Archived repositories cannot be enabled. The server-side `authorizeAgentRepository(userId, repositoryId)` guard only returns repositories that belong to the authenticated user, remain connected, are not archived, and have agent access enabled.
 
-The Repositories workspace lets a signed-in user sync from GitHub and enable or disable agent access per repository. Actual cloning, code modification, branch pushes, and pull requests remain disabled until the later agent-execution issues.
+The Repositories workspace lets a signed-in user sync from GitHub and enable or disable agent access per repository. The server can now mint job-bound repository-scoped credentials internally, but actual cloning, code modification, branch pushes, and pull requests remain disabled until the agent-execution issues.
+
+### Agent GitHub credential broker
+
+When `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` are configured, the backend also creates an internal credential broker for agent jobs. There is intentionally no browser/API route that returns GitHub credentials.
+
+Before minting a credential, the broker checks both an active `agent_jobs` record matching `userId + jobId + repositoryId` and the repository's current server-side authorization state. The repository must still be connected, not archived, and explicitly agent-enabled. That check runs even when a token is already cached in memory, so a completed/cancelled job or webhook revocation prevents cached-token reuse.
+
+GitHub installation credentials are minted for exactly one `repository_id` with only `contents: write` and `pull_requests: write`. GitHub installation tokens expire after one hour; Tappd-In keeps them only in process memory and refreshes when fewer than five minutes remain. No installation token, user PAT, or GitHub App private key is written to MongoDB or returned to the browser.
+
+The current `agent_jobs` record is deliberately minimal: job ID, user ID, repository ID, status, and timestamps. The isolated execution issue extends that same collection with base SHA, branch, workspace, test, and execution metadata.
 
 ### GitHub webhook reconciliation
 
