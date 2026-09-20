@@ -59,12 +59,18 @@ export class AgentGitHubCredentialBroker {
       return { token: cached.token, expiresAt: new Date(cached.expiresAt) };
     }
 
-    const minted = await this.minter.mintRepositoryCredential(
-      repository.installationId,
-      repository.repositoryId,
-      TOKEN_PERMISSIONS,
-    );
-    if (minted.expiresAt.getTime() <= this.now()) {
+    let minted;
+    try {
+      minted = await this.minter.mintRepositoryCredential(
+        repository.installationId,
+        repository.repositoryId,
+        TOKEN_PERMISSIONS,
+      );
+    } catch {
+      throw new Error("GITHUB_CREDENTIAL_MINT_FAILED");
+    }
+    const expiresAtMs = minted.expiresAt.getTime();
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= this.now()) {
       throw new Error("GITHUB_INSTALLATION_CREDENTIAL_EXPIRED");
     }
 
