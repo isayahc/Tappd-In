@@ -107,7 +107,7 @@ async function reconcileInstallation(runtime: GitHubWebhookRuntime, installation
   try {
     const repositories = await runtime.repositoryClient.listInstallationRepositories(installationId);
     for (const link of links) {
-      if (!link.active || link.suspended) continue;
+      if (link.active === false || link.suspended === true) continue;
       await runtime.repositoryStore.syncInstallation(link.connectedByUserId, installationId, repositories);
     }
   } catch (error) {
