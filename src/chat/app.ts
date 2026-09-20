@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
+import type { GitHubInstallationVerifier } from "../auth/github.js";
 import type { AuthStore, GitHubIdentity } from "../auth/store.js";
 import type { GitHubOAuthClient } from "../auth/github.js";
+import type { GitHubInstallationStore } from "../github/installations.js";
 import type { ChatProvider } from "./provider.js";
 import type { ChatStore } from "./store.js";
 
@@ -14,12 +16,19 @@ const assets: Record<string, [string, string]> = {
 };
 const SESSION_COOKIE = "tappd_session";
 const OAUTH_STATE_COOKIE = "tappd_oauth_state";
+const INSTALL_STATE_COOKIE = "tappd_install_state";
 const OWNER_COOKIE = "tappd_owner";
 
 export interface AuthRuntime {
   store: AuthStore;
   github: GitHubOAuthClient;
   secureCookies?: boolean;
+}
+
+export interface GitHubAppRuntime {
+  slug: string;
+  store: GitHubInstallationStore;
+  verifier: GitHubInstallationVerifier;
 }
 
 function cookies(request: Request) {
@@ -37,6 +46,13 @@ function clearCookie(name: string, path = "/", secure = false) {
   return `${name}=; HttpOnly; SameSite=Lax; Path=${path}; Max-Age=0${secure ? "; Secure" : ""}`;
 }
 
+function installationPermissionsAreSufficient(permissions: Record<string, string>) {
+  const metadata = permissions.metadata;
+  return (metadata === "read" || metadata === "write")
+    && permissions.contents === "write"
+    && permissions.pull_requests === "write";
+}
+
 export function createChatApp(
   store: ChatStore,
   provider: ChatProvider,
@@ -44,6 +60,7 @@ export function createChatApp(
   port: number,
   auth?: AuthRuntime,
   appOrigin = `http://localhost:${port}`,
+  githubApp?: GitHubAppRuntime,
 ) {
   const busy = new Set<string>();
   const configuredOrigin = new URL(appOrigin).origin;
@@ -54,6 +71,7 @@ export function createChatApp(
     allowed.add(`http://127.0.0.1:${originUrl.port || port}`);
   }
   const secureCookies = auth?.secureCookies ?? originUrl.protocol === "https:";
+  const installationCallbackUrl = new URL("/github/setup/callback", configuredOrigin).toString();
 
   return async (request: Request): Promise<Response> => {
     const headers = new Headers({
@@ -97,7 +115,12 @@ export function createChatApp(
       }
 
       if (request.method === "GET" && url.pathname === "/api/status") {
-        return json({ demo, storage: demo ? "memory" : "mongodb", authEnabled: Boolean(auth) });
+        return json({
+          demo,
+          storage: demo ? "memory" : "mongodb",
+          authEnabled: Boolean(auth),
+          githubAppEnabled: Boolean(auth && githubApp),
+        });
       }
 
       if (request.method === "GET" && url.pathname === "/auth/github") {
@@ -150,6 +173,65 @@ export function createChatApp(
         if (token) await auth.store.deleteSession(token);
         headers.append("Set-Cookie", clearCookie(SESSION_COOKIE, "/", secureCookies));
         return json({ ok: true });
+      }
+
+      if (request.method === "GET" && url.pathname === "/github/install") {
+        if (!auth || !githubApp) return json({ error: "GitHub App installation is not configured." }, 503);
+        const user = await sessionUser();
+        if (!user) return json({ error: "Sign in with GitHub before connecting repositories." }, 401);
+        return redirect(`https://github.com/apps/${githubApp.slug}/installations/new`);
+      }
+
+      if (request.method === "GET" && url.pathname === "/github/setup") {
+        if (!auth || !githubApp) return redirect("/?github=unavailable");
+        const user = await sessionUser();
+        if (!user) return redirect("/?github=signin");
+        if (url.searchParams.get("setup_action") === "request") return redirect("/?github=requested");
+        const installationId = Number(url.searchParams.get("installation_id"));
+        if (!Number.isSafeInteger(installationId) || installationId <= 0) return redirect("/?github=failed");
+        const state = await githubApp.store.createVerificationState(user.userId, installationId);
+        headers.append("Set-Cookie", setCookie(INSTALL_STATE_COOKIE, state, {
+          maxAge: 600,
+          path: "/github/setup/callback",
+          secure: secureCookies,
+        }));
+        return redirect(githubApp.verifier.installationAuthorizationUrl(state, installationCallbackUrl));
+      }
+
+      if (request.method === "GET" && url.pathname === "/github/setup/callback") {
+        if (!auth || !githubApp) return redirect("/?github=unavailable");
+        headers.append("Set-Cookie", clearCookie(INSTALL_STATE_COOKIE, "/github/setup/callback", secureCookies));
+        if (url.searchParams.get("error")) return redirect("/?github=denied");
+        const user = await sessionUser();
+        if (!user) return redirect("/?github=signin");
+        const state = url.searchParams.get("state") || "";
+        const code = url.searchParams.get("code") || "";
+        const installationId = state && code
+          ? await githubApp.store.consumeVerificationState(state, requestCookies[INSTALL_STATE_COOKIE], user.userId)
+          : null;
+        if (!installationId) return json({ error: "GitHub installation verification state is invalid or expired." }, 400);
+        try {
+          const verified = await githubApp.verifier.verifyInstallationCode(code, installationCallbackUrl, installationId);
+          if (verified.profile.id !== user.githubUserId) return redirect("/?github=account-mismatch");
+          if (!verified.installation) return redirect("/?github=unauthorized");
+          if (!installationPermissionsAreSufficient(verified.installation.permissions)) return redirect("/?github=permissions");
+          await githubApp.store.linkInstallation(user.userId, verified.installation);
+          return redirect("/?github=connected");
+        } catch (error) {
+          console.error("[github-app] installation verification failed", {
+            userId: user.userId,
+            installationId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return redirect("/?github=failed");
+        }
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/github/installations") {
+        if (!auth || !githubApp) return json({ error: "GitHub App installation is not configured." }, 503);
+        const user = await sessionUser();
+        if (!user) return json({ error: "Sign in with GitHub to continue." }, 401);
+        return json(await githubApp.store.listForUser(user.userId));
       }
 
       if (url.pathname.startsWith("/api/chats")) {
