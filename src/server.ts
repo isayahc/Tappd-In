@@ -8,6 +8,11 @@ import { MemoryChatStore, MongoChatStore, type Conversation } from "./chat/store
 import { githubAppClientFromEnv } from "./github/app-client.js";
 import { MemoryGitHubInstallationStore, MongoGitHubInstallationStore } from "./github/installations.js";
 import { MemoryConnectedRepositoryStore, MongoConnectedRepositoryStore } from "./github/repositories.js";
+import {
+  githubWebhookSecretFromEnv,
+  MemoryGitHubWebhookDeliveryStore,
+  MongoGitHubWebhookDeliveryStore,
+} from "./github/webhooks.js";
 
 function githubAppSlug(env: NodeJS.ProcessEnv = process.env) {
   const slug = env.GITHUB_APP_SLUG?.trim();
@@ -47,13 +52,25 @@ async function main() {
       const repositoryStore = db
         ? new MongoConnectedRepositoryStore(db.connectedRepositories)
         : new MemoryConnectedRepositoryStore();
-      await Promise.all([installationStore.init(), repositoryStore.init()]);
+      const repositoryClient = githubAppClientFromEnv() || undefined;
+      const webhookSecret = githubWebhookSecretFromEnv();
+      const webhookDeliveries = db
+        ? new MongoGitHubWebhookDeliveryStore(db.githubWebhookDeliveries)
+        : new MemoryGitHubWebhookDeliveryStore();
+      await Promise.all([installationStore.init(), repositoryStore.init(), webhookDeliveries.init()]);
       githubApp = {
         slug,
         store: installationStore,
         verifier: github as GitHubInstallationVerifier,
         repositoryStore,
-        repositoryClient: githubAppClientFromEnv() || undefined,
+        repositoryClient,
+        webhook: webhookSecret ? {
+          secret: webhookSecret,
+          deliveries: webhookDeliveries,
+          installationStore,
+          repositoryStore,
+          repositoryClient,
+        } : undefined,
       };
     }
   } else if (githubAppSlug()) {
@@ -75,9 +92,10 @@ async function main() {
         return;
       }
       const chunks: Buffer[] = []; let size = 0;
+      const maxBodySize = req.url?.startsWith("/webhooks/github") ? 1024 * 1024 : 20000;
       for await (const chunk of req) {
         size += chunk.length;
-        if (size > 20000) { res.writeHead(413).end("Request too large"); return; }
+        if (size > maxBodySize) { res.writeHead(413).end("Request too large"); return; }
         chunks.push(chunk);
       }
       const body = Buffer.concat(chunks);
@@ -94,7 +112,7 @@ async function main() {
     }
   });
   server.requestTimeout = 120000;
-  server.listen(port, "127.0.0.1", () => console.log(`Tappd-In: ${origin.origin}${demo ? " (demo: no AI, temporary history)" : " (OpenCode + MongoDB)"}${auth ? " · GitHub auth enabled" : " · local anonymous mode"}${githubApp ? " · GitHub App install enabled" : ""}${githubApp?.repositoryClient ? " · repo sync enabled" : ""}`));
+  server.listen(port, "127.0.0.1", () => console.log(`Tappd-In: ${origin.origin}${demo ? " (demo: no AI, temporary history)" : " (OpenCode + MongoDB)"}${auth ? " · GitHub auth enabled" : " · local anonymous mode"}${githubApp ? " · GitHub App install enabled" : ""}${githubApp?.repositoryClient ? " · repo sync enabled" : ""}${githubApp?.webhook ? " · webhook enabled" : ""}`));
   server.on("error", async () => { console.error("Cannot start server. Check that PORT is available."); await db?.client.close(); process.exitCode = 1; });
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => {
     server.close(() => { void db?.client.close(); });

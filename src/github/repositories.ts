@@ -22,6 +22,8 @@ export interface ConnectedRepositoryStore {
   listForUser(userId: string): Promise<ConnectedRepository[]>;
   setAgentEnabled(userId: string, repositoryId: number, enabled: boolean): Promise<ConnectedRepository | null>;
   authorizeAgentRepository(userId: string, repositoryId: number): Promise<ConnectedRepository | null>;
+  disconnectInstallation(installationId: number): Promise<void>;
+  disconnectRepositories(installationId: number, repositoryIds: number[]): Promise<void>;
 }
 
 export class MongoConnectedRepositoryStore implements ConnectedRepositoryStore {
@@ -112,6 +114,23 @@ export class MongoConnectedRepositoryStore implements ConnectedRepositoryStore {
       { projection: { _id: 0 } },
     );
   }
+
+  async disconnectInstallation(installationId: number) {
+    const now = new Date();
+    await this.repositories.updateMany(
+      { installationId, connected: true },
+      { $set: { connected: false, agentEnabled: false, updatedAt: now, lastSyncedAt: now } },
+    );
+  }
+
+  async disconnectRepositories(installationId: number, repositoryIds: number[]) {
+    if (!repositoryIds.length) return;
+    const now = new Date();
+    await this.repositories.updateMany(
+      { installationId, repositoryId: { $in: repositoryIds }, connected: true },
+      { $set: { connected: false, agentEnabled: false, updatedAt: now, lastSyncedAt: now } },
+    );
+  }
 }
 
 export class MemoryConnectedRepositoryStore implements ConnectedRepositoryStore {
@@ -172,5 +191,23 @@ export class MemoryConnectedRepositoryStore implements ConnectedRepositoryStore 
     return repository?.connected && !repository.archived && repository.agentEnabled
       ? structuredClone(repository)
       : null;
+  }
+
+  async disconnectInstallation(installationId: number) {
+    const now = new Date();
+    for (const [key, repository] of this.repositories) {
+      if (repository.installationId !== installationId || !repository.connected) continue;
+      this.repositories.set(key, { ...repository, connected: false, agentEnabled: false, updatedAt: now, lastSyncedAt: now });
+    }
+  }
+
+  async disconnectRepositories(installationId: number, repositoryIds: number[]) {
+    const ids = new Set(repositoryIds);
+    if (!ids.size) return;
+    const now = new Date();
+    for (const [key, repository] of this.repositories) {
+      if (repository.installationId !== installationId || !ids.has(repository.repositoryId) || !repository.connected) continue;
+      this.repositories.set(key, { ...repository, connected: false, agentEnabled: false, updatedAt: now, lastSyncedAt: now });
+    }
   }
 }

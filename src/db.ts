@@ -2,6 +2,7 @@ import { MongoClient } from "mongodb";
 import type { AuthSession, GitHubIdentity, OAuthState } from "./auth/store.js";
 import type { GitHubInstallationLink, GitHubInstallationState } from "./github/installations.js";
 import type { ConnectedRepository } from "./github/repositories.js";
+import type { GitHubWebhookDelivery } from "./github/webhooks.js";
 import type { PlatformUser, ProspectProfile, ResearchJob } from "./models.js";
 
 export async function connectDatabase() {
@@ -23,6 +24,7 @@ export async function connectDatabase() {
       githubInstallations: db.collection<GitHubInstallationLink>("github_installations"),
       githubInstallationStates: db.collection<GitHubInstallationState>("github_installation_states"),
       connectedRepositories: db.collection<ConnectedRepository>("connected_repositories"),
+      githubWebhookDeliveries: db.collection<GitHubWebhookDelivery>("github_webhook_deliveries"),
     };
   } catch (error) {
     await client.close();

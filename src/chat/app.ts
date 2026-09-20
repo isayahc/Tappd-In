@@ -8,6 +8,7 @@ import type { GitHubOAuthClient } from "../auth/github.js";
 import type { GitHubAppRepositoryClient } from "../github/app-client.js";
 import type { GitHubInstallationStore } from "../github/installations.js";
 import type { ConnectedRepositoryStore } from "../github/repositories.js";
+import { handleGitHubWebhook, type GitHubWebhookRuntime } from "../github/webhooks.js";
 import type { ChatProvider } from "./provider.js";
 import type { ChatStore } from "./store.js";
 
@@ -34,6 +35,7 @@ export interface GitHubAppRuntime {
   verifier: GitHubInstallationVerifier;
   repositoryStore: ConnectedRepositoryStore;
   repositoryClient?: GitHubAppRepositoryClient;
+  webhook?: GitHubWebhookRuntime;
 }
 
 function cookies(request: Request) {
@@ -107,6 +109,10 @@ export function createChatApp(
       return new Response(null, { status, headers });
     };
     const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/webhooks/github") {
+      if (!githubApp?.webhook) return json({ error: "GitHub webhooks are not configured." }, 503);
+      return handleGitHubWebhook(githubApp.webhook, request);
+    }
     if (!allowed.has(url.origin)) return json({ error: "Invalid application origin." }, 403);
     if (request.method !== "GET" && (!allowed.has(request.headers.get("origin") || "") || !request.headers.get("content-type")?.startsWith("application/json"))) {
       return json({ error: "Send same-origin JSON requests." }, 403);
@@ -144,6 +150,7 @@ export function createChatApp(
           authEnabled: Boolean(auth),
           githubAppEnabled: Boolean(auth && githubApp),
           githubRepoSyncEnabled: Boolean(auth && githubApp?.repositoryClient),
+          githubWebhookEnabled: Boolean(githubApp?.webhook),
         });
       }
 

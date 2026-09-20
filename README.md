@@ -82,6 +82,16 @@ Connected repositories are stored in `connected_repositories` using GitHub's sta
 
 The Repositories workspace lets a signed-in user sync from GitHub and enable or disable agent access per repository. Actual cloning, code modification, branch pushes, and pull requests remain disabled until the later agent-execution issues.
 
+### GitHub webhook reconciliation
+
+Set `GITHUB_APP_WEBHOOK_SECRET` and configure the GitHub App webhook URL as `${APP_ORIGIN}/webhooks/github` using `application/json`. The endpoint validates the raw request body against GitHub's `X-Hub-Signature-256` HMAC before parsing or changing access state.
+
+Tappd-In handles the GitHub App `installation` lifecycle events needed for created/deleted/suspend/unsuspend state plus `installation_repositories` added/removed events. Removing a repository, suspending an installation, or deleting an installation immediately disconnects affected repository records and forces agent access off. Unsuspension reconciles the current repository list when App credentials are available, but does not silently restore agent access.
+
+Webhook deliveries use `X-GitHub-Delivery` as an idempotency key. Minimal delivery records are retained for seven days; successfully processed redeliveries are acknowledged without applying the event twice, while failed processing releases the claim so a later redelivery can retry.
+
+If a webhook is missed, the existing **Sync from GitHub** action (or `POST /api/github/repositories/sync`) is the manual reconciliation path. It re-queries every active installation and revokes any stale repository access it finds.
+
 ### Troubleshooting
 
 - **Startup failed:** check that `MONGODB_URI` is present and reachable, then check whether port 3000 is free. Use `npm run chat:demo` to isolate UI setup without MongoDB.
