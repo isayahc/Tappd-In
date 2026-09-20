@@ -172,7 +172,7 @@ test("Mongo agent job authorization stores no credential material", { skip: !pro
   const database = client.db(`tappd_in_credential_test_${crypto.randomUUID().replaceAll("-", "")}`);
   try {
     const store = new MongoAgentJobAuthorizationStore(
-      database.collection<AgentJobAuthorization>("agent_job_authorizations"),
+      database.collection<AgentJobAuthorization>("agent_jobs"),
     );
     await store.init();
     await store.create("job-1", "alice", 101);
@@ -180,7 +180,7 @@ test("Mongo agent job authorization stores no credential material", { skip: !pro
     assert.equal(await store.authorizeCredentialJob("bob", "job-1", 101), null);
     assert.equal(await store.authorizeCredentialJob("alice", "job-1", 102), null);
 
-    const raw = await database.collection("agent_job_authorizations").findOne({ jobId: "job-1" });
+    const raw = await database.collection("agent_jobs").findOne({ jobId: "job-1" });
     assert.equal("token" in (raw || {}), false);
     assert.equal("credential" in (raw || {}), false);
 
