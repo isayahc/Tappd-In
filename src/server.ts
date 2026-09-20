@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
+import { githubOAuthFromEnv } from "./auth/github.js";
+import { MemoryAuthStore, MongoAuthStore } from "./auth/store.js";
 import { connectDatabase } from "./db.js";
-import { createChatApp } from "./chat/app.js";
+import { createChatApp, type AuthRuntime } from "./chat/app.js";
 import { DemoChatProvider, OpenCodeChatProvider } from "./chat/provider.js";
 import { MemoryChatStore, MongoChatStore, type Conversation } from "./chat/store.js";
 
@@ -8,13 +10,39 @@ async function main() {
   const demo = process.argv.includes("--demo");
   const port = Number(process.env.PORT || 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("PORT must be between 1 and 65535");
+  const appOrigin = process.env.APP_ORIGIN || `http://localhost:${port}`;
+  const origin = new URL(appOrigin);
+  if (!["http:", "https:"].includes(origin.protocol) || origin.pathname !== "/") throw new Error("APP_ORIGIN must be an http(s) origin without a path");
+
   const provider = demo ? new DemoChatProvider() : new OpenCodeChatProvider();
   const db = demo ? undefined : await connectDatabase();
   const store = db ? new MongoChatStore(db.database.collection<Conversation>("chat_conversations")) : new MemoryChatStore();
   if (store instanceof MongoChatStore) await store.init();
-  const app = createChatApp(store, provider, demo, port);
+
+  const github = githubOAuthFromEnv(origin.origin);
+  let auth: AuthRuntime | undefined;
+  if (github) {
+    const authStore = db
+      ? new MongoAuthStore(db.users, db.githubIdentities, db.authSessions, db.oauthStates)
+      : new MemoryAuthStore();
+    await authStore.init();
+    auth = { store: authStore, github, secureCookies: origin.protocol === "https:" };
+  }
+
+  const app = createChatApp(store, provider, demo, port, auth, origin.origin);
+  const allowedHosts = new Set([origin.host]);
+  if (origin.protocol === "http:" && ["localhost", "127.0.0.1"].includes(origin.hostname)) {
+    const localPort = origin.port || String(port);
+    allowedHosts.add(`localhost:${localPort}`);
+    allowedHosts.add(`127.0.0.1:${localPort}`);
+  }
+
   const server = createServer(async (req, res) => {
     try {
+      if (!req.headers.host || !allowedHosts.has(req.headers.host)) {
+        res.writeHead(403, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Invalid host." }));
+        return;
+      }
       const chunks: Buffer[] = []; let size = 0;
       for await (const chunk of req) {
         size += chunk.length;
@@ -22,8 +50,9 @@ async function main() {
         chunks.push(chunk);
       }
       const body = Buffer.concat(chunks);
-      const response = await app(new Request(`http://${req.headers.host || "invalid"}${req.url}`, {
-        method: req.method, headers: Object.fromEntries(Object.entries(req.headers).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
+      const response = await app(new Request(new URL(req.url || "/", origin.origin), {
+        method: req.method,
+        headers: Object.fromEntries(Object.entries(req.headers).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
         body: req.method === "GET" || req.method === "HEAD" ? undefined : body,
       }));
       res.writeHead(response.status, Object.fromEntries(response.headers));
@@ -34,7 +63,7 @@ async function main() {
     }
   });
   server.requestTimeout = 120000;
-  server.listen(port, "127.0.0.1", () => console.log(`Tappd-In: http://localhost:${port}${demo ? " (demo: no AI, temporary history)" : " (OpenCode + MongoDB)"}`));
+  server.listen(port, "127.0.0.1", () => console.log(`Tappd-In: ${origin.origin}${demo ? " (demo: no AI, temporary history)" : " (OpenCode + MongoDB)"}${auth ? " · GitHub auth enabled" : " · local anonymous mode"}`));
   server.on("error", async () => { console.error("Cannot start server. Check that PORT is available."); await db?.client.close(); process.exitCode = 1; });
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => {
     server.close(() => { void db?.client.close(); });
@@ -42,6 +71,6 @@ async function main() {
 }
 main().catch((error) => {
   console.error("[startup] failed", error instanceof Error ? error.message : String(error));
-  console.error("Startup failed. Check MONGODB_URI, MongoDB connectivity, and .env. Docker is optional; to try the UI without services use: npm run chat:demo");
+  console.error("Startup failed. Check MONGODB_URI, MongoDB connectivity, auth settings, and .env. Docker is optional; to try the UI without services use: npm run chat:demo");
   process.exitCode = 1;
 });
