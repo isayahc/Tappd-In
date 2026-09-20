@@ -42,6 +42,14 @@ Start the OpenCode-backed chat with one command:
 npm run chat:start
 ```
 
+If OpenCode is not installed, `chat:start` installs it automatically using the official OpenCode installer. You can also install it explicitly with:
+
+```bash
+npm run opencode:install
+```
+
+The installer requires `curl` and does not use `sudo` or modify project dependencies.
+
 Open **http://localhost:3000**. Send a message, create another conversation, and reload to resume saved history. The app creates the chat indexes automatically. Stop the app with Ctrl+C. If you used the optional Docker database, stop it with `docker compose stop`.
 
 `chat:start` starts OpenCode with web search enabled, waits for it to become healthy, then starts Tappd-In. If OpenCode is already running on port 4096, it reuses that process. Press Ctrl+C to stop Tappd-In and any OpenCode process started by the script.

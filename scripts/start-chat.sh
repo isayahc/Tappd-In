@@ -4,9 +4,10 @@ set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 
 if ! command -v opencode >/dev/null 2>&1; then
-  printf '%s\n' "OpenCode is not installed or is not on PATH." >&2
-  exit 1
+  printf '%s\n' "OpenCode is not installed. Running the project installer..."
+  bash scripts/install-opencode.sh
 fi
+
 if ! command -v curl >/dev/null 2>&1; then
   printf '%s\n' "curl is required to check OpenCode readiness." >&2
   exit 1
