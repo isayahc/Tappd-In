@@ -16,7 +16,16 @@
     <div class="sidebar-footer">A place to start something.</div>
   </aside>
   <main>
-    <header><span>YOUR WORKSPACE <span class="separator">/</span> <strong>Chat</strong></span><span id="mode">Connecting…</span></header>
+    <header>
+      <span>YOUR WORKSPACE <span class="separator">/</span> <strong>Chat</strong></span>
+      <div class="header-actions"><span id="mode">Connecting…</span><span id="account" hidden></span><button id="logout" class="text-button" type="button" hidden>Sign out</button></div>
+    </header>
+    <section id="auth-gate" hidden>
+      <div class="eyebrow">YOUR WORKSPACE</div>
+      <h1>Sign in to<br>get tappd in.</h1>
+      <p id="auth-message">Use your GitHub account to keep your workspace and conversations tied to you.</p>
+      <a class="github-signin" href="/auth/github">Continue with GitHub <span>↗</span></a>
+    </section>
     <div id="messages" role="log" aria-label="Conversation" aria-live="polite"></div>
     <section id="welcome">
       <div class="eyebrow">LET’S TALK</div>
