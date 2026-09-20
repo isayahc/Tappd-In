@@ -1,6 +1,6 @@
 # Tappd-In
 
-A simple browser chatbot backed by OpenCode, with conversation history in MongoDB. The prospect-research skeleton remains available separately. GitHub sign-in is available when configured; public hosting, repository authorization, and live prospect search are not implemented.
+A simple browser chatbot backed by OpenCode, with conversation history in MongoDB. The prospect-research skeleton remains available separately. GitHub sign-in and verified GitHub App installation linking are available when configured; repository syncing/agent writes, public hosting, and live prospect search are not implemented.
 
 ## Try the chat immediately
 
@@ -63,6 +63,20 @@ By default, with GitHub credentials unset, the UI keeps the existing localhost-o
 To enable account authentication, set `APP_ORIGIN`, `GITHUB_APP_CLIENT_ID`, and `GITHUB_APP_CLIENT_SECRET` in `.env`. The callback URL registered with GitHub must be `${APP_ORIGIN}/auth/github/callback` (for local development: `http://localhost:3000/auth/github/callback`).
 
 On sign-in, Tappd-In exchanges the OAuth code server-side, loads the GitHub `/user` identity, and discards the GitHub access token. MongoDB stores the stable numeric GitHub user ID, the application-owned `userId`, hashed session tokens, and short-lived one-time OAuth state. Leaving the GitHub credentials blank preserves local anonymous mode for development.
+
+### Optional GitHub App repository connection
+
+After GitHub sign-in is configured, set `GITHUB_APP_SLUG` to enable **Connect GitHub repos**. Configure the GitHub App itself with:
+
+- **Setup URL:** `${APP_ORIGIN}/github/setup`
+- **Callback URLs:** `${APP_ORIGIN}/auth/github/callback` and `${APP_ORIGIN}/github/setup/callback`
+- **Request user authorization (OAuth) during installation:** off, because Tappd-In uses the setup URL for post-install verification
+- **Repository permissions:** Metadata read, Contents read/write, Pull requests read/write
+- **Repository access:** users may select all repositories or only chosen repositories in GitHub's installation UI
+
+When GitHub returns an `installation_id` to the setup URL, Tappd-In does not trust that parameter by itself. It creates a one-time state record tied to the signed-in Tappd-In user, performs a short GitHub user-authorization round trip, and accepts the installation only if GitHub's `/user/installations` response for that user contains the same installation. The temporary user access token is discarded after verification. This supports both personal-account and organization installations.
+
+Verified installation links are stored in `github_installations`. This stage stores the installation/account relationship only; repository enumeration, installation access tokens for agents, and write execution are handled by later issues. `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, and `GITHUB_APP_WEBHOOK_SECRET` are reserved in `.env.example` for those later stages.
 
 ### Troubleshooting
 

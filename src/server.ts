@@ -1,10 +1,18 @@
 import { createServer } from "node:http";
-import { githubOAuthFromEnv } from "./auth/github.js";
+import { githubOAuthFromEnv, type GitHubInstallationVerifier } from "./auth/github.js";
 import { MemoryAuthStore, MongoAuthStore } from "./auth/store.js";
 import { connectDatabase } from "./db.js";
-import { createChatApp, type AuthRuntime } from "./chat/app.js";
+import { createChatApp, type AuthRuntime, type GitHubAppRuntime } from "./chat/app.js";
 import { DemoChatProvider, OpenCodeChatProvider } from "./chat/provider.js";
 import { MemoryChatStore, MongoChatStore, type Conversation } from "./chat/store.js";
+import { MemoryGitHubInstallationStore, MongoGitHubInstallationStore } from "./github/installations.js";
+
+function githubAppSlug(env: NodeJS.ProcessEnv = process.env) {
+  const slug = env.GITHUB_APP_SLUG?.trim();
+  if (!slug) return null;
+  if (!/^[A-Za-z0-9-]+$/.test(slug)) throw new Error("GITHUB_APP_SLUG must contain only letters, numbers, and hyphens");
+  return slug;
+}
 
 async function main() {
   const demo = process.argv.includes("--demo");
@@ -21,15 +29,31 @@ async function main() {
 
   const github = githubOAuthFromEnv(origin.origin);
   let auth: AuthRuntime | undefined;
+  let githubApp: GitHubAppRuntime | undefined;
   if (github) {
     const authStore = db
       ? new MongoAuthStore(db.users, db.githubIdentities, db.authSessions, db.oauthStates)
       : new MemoryAuthStore();
     await authStore.init();
     auth = { store: authStore, github, secureCookies: origin.protocol === "https:" };
+
+    const slug = githubAppSlug();
+    if (slug) {
+      const installationStore = db
+        ? new MongoGitHubInstallationStore(db.githubInstallations, db.githubInstallationStates)
+        : new MemoryGitHubInstallationStore();
+      await installationStore.init();
+      githubApp = {
+        slug,
+        store: installationStore,
+        verifier: github as GitHubInstallationVerifier,
+      };
+    }
+  } else if (githubAppSlug()) {
+    throw new Error("GITHUB_APP_SLUG requires GITHUB_APP_CLIENT_ID and GITHUB_APP_CLIENT_SECRET");
   }
 
-  const app = createChatApp(store, provider, demo, port, auth, origin.origin);
+  const app = createChatApp(store, provider, demo, port, auth, origin.origin, githubApp);
   const allowedHosts = new Set([origin.host]);
   if (origin.protocol === "http:" && ["localhost", "127.0.0.1"].includes(origin.hostname)) {
     const localPort = origin.port || String(port);
@@ -63,7 +87,7 @@ async function main() {
     }
   });
   server.requestTimeout = 120000;
-  server.listen(port, "127.0.0.1", () => console.log(`Tappd-In: ${origin.origin}${demo ? " (demo: no AI, temporary history)" : " (OpenCode + MongoDB)"}${auth ? " · GitHub auth enabled" : " · local anonymous mode"}`));
+  server.listen(port, "127.0.0.1", () => console.log(`Tappd-In: ${origin.origin}${demo ? " (demo: no AI, temporary history)" : " (OpenCode + MongoDB)"}${auth ? " · GitHub auth enabled" : " · local anonymous mode"}${githubApp ? " · GitHub App install enabled" : ""}`));
   server.on("error", async () => { console.error("Cannot start server. Check that PORT is available."); await db?.client.close(); process.exitCode = 1; });
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => {
     server.close(() => { void db?.client.close(); });
@@ -71,6 +95,6 @@ async function main() {
 }
 main().catch((error) => {
   console.error("[startup] failed", error instanceof Error ? error.message : String(error));
-  console.error("Startup failed. Check MONGODB_URI, MongoDB connectivity, auth settings, and .env. Docker is optional; to try the UI without services use: npm run chat:demo");
+  console.error("Startup failed. Check MONGODB_URI, MongoDB connectivity, GitHub settings, and .env. Docker is optional; to try the UI without services use: npm run chat:demo");
   process.exitCode = 1;
 });
