@@ -1,6 +1,6 @@
 # Tappd-In
 
-A simple local browser chatbot backed by OpenCode, with conversation history in MongoDB. The prospect-research skeleton remains available separately. This version is for one local developer; platform sign-in, public hosting, and live prospect search are not implemented.
+A simple browser chatbot backed by OpenCode, with conversation history in MongoDB. The prospect-research skeleton remains available separately. GitHub sign-in is available when configured; public hosting, repository authorization, and live prospect search are not implemented.
 
 ## Try the chat immediately
 
@@ -56,7 +56,13 @@ Open **http://localhost:3000**. Send a message, create another conversation, and
 
 The chat agent can use OpenCode's `websearch` and `webfetch` tools for web research. It cannot read or modify local files, run shell commands, or write files. If you enabled OpenCode server authentication, put matching `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME` values in `.env`. Keys and credentials stay server-side. Each MongoDB chat stores its OpenCode session ID and reuses that session for subsequent replies. No profile creation runs from chat.
 
-The UI identifies the browser through an HTTP-only cookie; it is not platform authentication. Clearing the cookie loses access to that browser's old conversations. Use one app process, keep the app on localhost, and add real account authorization before exposing it publicly. Chats are capped at 50 turns, with 4,000 characters per user message.
+By default, with GitHub credentials unset, the UI keeps the existing localhost-only anonymous browser cookie so local development continues to work. When `GITHUB_APP_CLIENT_ID` and `GITHUB_APP_CLIENT_SECRET` are configured, chat endpoints require GitHub sign-in and conversations are owned by the application `userId` associated with GitHub's stable numeric user ID. Sessions are stored server-side; the browser receives only an opaque HTTP-only cookie. Set `APP_ORIGIN` to the exact application origin and register `${APP_ORIGIN}/auth/github/callback` as the GitHub OAuth callback URL. Chats are capped at 50 turns, with 4,000 characters per user message.
+
+### Optional GitHub sign-in
+
+To enable account authentication, set `APP_ORIGIN`, `GITHUB_APP_CLIENT_ID`, and `GITHUB_APP_CLIENT_SECRET` in `.env`. The callback URL registered with GitHub must be `${APP_ORIGIN}/auth/github/callback` (for local development: `http://localhost:3000/auth/github/callback`).
+
+On sign-in, Tappd-In exchanges the OAuth code server-side, loads the GitHub `/user` identity, and discards the GitHub access token. MongoDB stores the stable numeric GitHub user ID, the application-owned `userId`, hashed session tokens, and short-lived one-time OAuth state. Leaving the GitHub credentials blank preserves local anonymous mode for development.
 
 ### Troubleshooting
 
