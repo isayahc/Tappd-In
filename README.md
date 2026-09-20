@@ -1,6 +1,6 @@
 # Tappd-In
 
-A simple browser chatbot backed by OpenCode, with conversation history in MongoDB. The prospect-research skeleton remains available separately. GitHub sign-in and verified GitHub App installation linking are available when configured; repository syncing/agent writes, public hosting, and live prospect search are not implemented.
+A simple browser chatbot backed by OpenCode, with conversation history in MongoDB. The prospect-research skeleton remains available separately. GitHub sign-in, verified GitHub App installation linking, and per-user repository synchronization are available when configured; agent execution, public hosting, and live prospect search are not implemented.
 
 ## Try the chat immediately
 
@@ -76,7 +76,11 @@ After GitHub sign-in is configured, set `GITHUB_APP_SLUG` to enable **Connect Gi
 
 When GitHub returns an `installation_id` to the setup URL, Tappd-In does not trust that parameter by itself. It creates a one-time state record tied to the signed-in Tappd-In user, performs a short GitHub user-authorization round trip, and accepts the installation only if GitHub's `/user/installations` response for that user contains the same installation. The temporary user access token is discarded after verification. This supports both personal-account and organization installations.
 
-Verified installation links are stored in `github_installations`. This stage stores the installation/account relationship only; repository enumeration, installation access tokens for agents, and write execution are handled by later issues. `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, and `GITHUB_APP_WEBHOOK_SECRET` are reserved in `.env.example` for those later stages.
+Verified installation links are stored in `github_installations`. Add `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` to enable repository synchronization. Tappd-In signs a short-lived GitHub App JWT, mints an installation access token in memory, lists the repositories currently granted to that installation, and discards the token after the request. GitHub installation tokens expire after one hour.
+
+Connected repositories are stored in `connected_repositories` using GitHub's stable numeric repository ID, installation ID, full name, default branch, visibility/archive state, and an explicit `agentEnabled` flag. A repository removed from the GitHub App selection is marked disconnected on the next sync and its agent access is forcibly disabled. Archived repositories cannot be enabled. The server-side `authorizeAgentRepository(userId, repositoryId)` guard only returns repositories that belong to the authenticated user, remain connected, are not archived, and have agent access enabled.
+
+The Repositories workspace lets a signed-in user sync from GitHub and enable or disable agent access per repository. Actual cloning, code modification, branch pushes, and pull requests remain disabled until the later agent-execution issues.
 
 ### Troubleshooting
 
