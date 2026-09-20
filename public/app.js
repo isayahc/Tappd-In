@@ -110,6 +110,7 @@ function renderRepositories(repositories) {
       ? 'Archived'
       : repository.agentEnabled ? 'Agent access on' : 'Enable agent access';
     control.disabled = repository.archived;
+    if (repository.archived) control.dataset.alwaysDisabled = 'true';
     control.onclick = async () => {
       control.disabled = true;
       try {
@@ -134,6 +135,8 @@ async function loadRepositories() {
 function setBusy(value) {
   busy = value;
   for (const element of document.querySelectorAll('button, textarea')) element.disabled = value || authBlocked;
+  for (const element of document.querySelectorAll('[data-always-disabled="true"]')) element.disabled = true;
+  $('#sync-repositories').disabled = value || authBlocked || !githubRepoSyncEnabled;
   $('#logout').disabled = value;
   $('#thinking').hidden = !value;
 }
