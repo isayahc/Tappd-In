@@ -1,4 +1,5 @@
 import { MongoClient } from "mongodb";
+import type { AgentJobAuthorization } from "./agents/job-authorizations.js";
 import type { AuthSession, GitHubIdentity, OAuthState } from "./auth/store.js";
 import type { GitHubInstallationLink, GitHubInstallationState } from "./github/installations.js";
 import type { ConnectedRepository } from "./github/repositories.js";
@@ -25,6 +26,7 @@ export async function connectDatabase() {
       githubInstallationStates: db.collection<GitHubInstallationState>("github_installation_states"),
       connectedRepositories: db.collection<ConnectedRepository>("connected_repositories"),
       githubWebhookDeliveries: db.collection<GitHubWebhookDelivery>("github_webhook_deliveries"),
+      agentJobs: db.collection<AgentJobAuthorization>("agent_jobs"),
     };
   } catch (error) {
     await client.close();

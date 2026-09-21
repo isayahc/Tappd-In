@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { AgentGitHubCredentialBroker } from "../agents/credential-broker.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
@@ -35,6 +36,7 @@ export interface GitHubAppRuntime {
   verifier: GitHubInstallationVerifier;
   repositoryStore: ConnectedRepositoryStore;
   repositoryClient?: GitHubAppRepositoryClient;
+  credentialBroker?: AgentGitHubCredentialBroker;
   webhook?: GitHubWebhookRuntime;
 }
 
@@ -151,6 +153,7 @@ export function createChatApp(
           githubAppEnabled: Boolean(auth && githubApp),
           githubRepoSyncEnabled: Boolean(auth && githubApp?.repositoryClient),
           githubWebhookEnabled: Boolean(githubApp?.webhook),
+          agentCredentialBrokerEnabled: Boolean(githubApp?.credentialBroker),
         });
       }
 
