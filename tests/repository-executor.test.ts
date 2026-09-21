@@ -10,12 +10,13 @@ import type { CommandOptions, CommandResult, CommandRunner } from "../src/agents
 import { AgentRepositoryExecutor } from "../src/agents/repository-executor.js";
 import type {
   GitHubAppRepositoryClient,
+  GitHubRepositoryHeadClient,
   GitHubInstallationCredentialMinter,
   GitHubInstallationRepository,
 } from "../src/github/app-client.js";
 import { MemoryConnectedRepositoryStore } from "../src/github/repositories.js";
 
-class FakeGitHub implements GitHubAppRepositoryClient, GitHubInstallationCredentialMinter {
+class FakeGitHub implements GitHubAppRepositoryClient, GitHubRepositoryHeadClient, GitHubInstallationCredentialMinter {
   mints = 0;
   async listInstallationRepositories(): Promise<GitHubInstallationRepository[]> { return []; }
   async getRepositoryBranchHead() { return "a".repeat(40); }
