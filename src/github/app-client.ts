@@ -16,6 +16,9 @@ const repositoriesResponse = z.object({
   total_count: z.number().int().nonnegative(),
   repositories: z.array(repository),
 });
+const gitRefResponse = z.object({
+  object: z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/i) }),
+});
 
 export interface GitHubInstallationRepository {
   repositoryId: number;
@@ -41,6 +44,12 @@ export interface GitHubRepositoryCredential {
 
 export interface GitHubAppRepositoryClient {
   listInstallationRepositories(installationId: number): Promise<GitHubInstallationRepository[]>;
+  getRepositoryBranchHead(
+    installationId: number,
+    repositoryId: number,
+    fullName: string,
+    branch: string,
+  ): Promise<string>;
 }
 
 export interface GitHubInstallationCredentialMinter {
@@ -120,6 +129,30 @@ export class GitHubAppClient implements GitHubAppRepositoryClient, GitHubInstall
       repositoryIds: [repositoryId],
       permissions,
     });
+  }
+
+  async getRepositoryBranchHead(
+    installationId: number,
+    repositoryId: number,
+    fullName: string,
+    branch: string,
+  ) {
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(fullName)) throw new Error("INVALID_GITHUB_REPOSITORY_NAME");
+    if (!branch || branch.includes("..") || branch.startsWith("/") || branch.endsWith("/")) throw new Error("INVALID_GITHUB_BRANCH");
+    const credential = await this.mintRepositoryCredential(installationId, repositoryId, { contents: "read" });
+    const ref = branch.split("/").map(encodeURIComponent).join("/");
+    const response = await this.request(
+      `https://api.github.com/repos/${fullName}/git/ref/heads/${ref}`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${credential.token}`,
+          "X-GitHub-Api-Version": "2026-03-10",
+        },
+      },
+    );
+    if (!response.ok) throw new Error("GITHUB_BRANCH_HEAD_LOOKUP_FAILED");
+    return gitRefResponse.parse(await response.json()).object.sha;
   }
 
   async listInstallationRepositories(installationId: number) {
