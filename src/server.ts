@@ -1,5 +1,8 @@
 import { createServer } from "node:http";
 import { AgentGitHubCredentialBroker } from "./agents/credential-broker.js";
+import { OpenCodeRepositoryAgent } from "./agents/opencode-repository-agent.js";
+import { NodeCommandRunner } from "./agents/process-runner.js";
+import { AgentRepositoryExecutor } from "./agents/repository-executor.js";
 import { MemoryAgentJobAuthorizationStore, MongoAgentJobAuthorizationStore } from "./agents/job-authorizations.js";
 import { githubOAuthFromEnv, type GitHubInstallationVerifier } from "./auth/github.js";
 import { MemoryAuthStore, MongoAuthStore } from "./auth/store.js";
@@ -61,6 +64,17 @@ async function main() {
       const credentialBroker = repositoryClient
         ? new AgentGitHubCredentialBroker(agentJobStore, repositoryStore, repositoryClient)
         : undefined;
+      const repositoryExecutor = repositoryClient && credentialBroker
+        ? new AgentRepositoryExecutor({
+            jobs: agentJobStore,
+            repositories: repositoryStore,
+            github: repositoryClient,
+            credentials: credentialBroker,
+            commands: new NodeCommandRunner(),
+            agent: new OpenCodeRepositoryAgent(),
+            workspaceRoot: process.env.TAPPD_AGENT_WORKSPACE_ROOT,
+          })
+        : undefined;
       const webhookSecret = githubWebhookSecretFromEnv();
       const webhookDeliveries = db
         ? new MongoGitHubWebhookDeliveryStore(db.githubWebhookDeliveries)
@@ -78,6 +92,8 @@ async function main() {
         repositoryStore,
         repositoryClient,
         credentialBroker,
+        jobStore: agentJobStore,
+        repositoryExecutor,
         webhook: webhookSecret ? {
           secret: webhookSecret,
           deliveries: webhookDeliveries,
@@ -126,7 +142,7 @@ async function main() {
     }
   });
   server.requestTimeout = 120000;
-  server.listen(port, "127.0.0.1", () => console.log(`Tappd-In: ${origin.origin}${demo ? " (demo: no AI, temporary history)" : " (OpenCode + MongoDB)"}${auth ? " · GitHub auth enabled" : " · local anonymous mode"}${githubApp ? " · GitHub App install enabled" : ""}${githubApp?.repositoryClient ? " · repo sync enabled" : ""}${githubApp?.credentialBroker ? " · agent credentials enabled" : ""}${githubApp?.webhook ? " · webhook enabled" : ""}`));
+  server.listen(port, "127.0.0.1", () => console.log(`Tappd-In: ${origin.origin}${demo ? " (demo: no AI, temporary history)" : " (OpenCode + MongoDB)"}${auth ? " · GitHub auth enabled" : " · local anonymous mode"}${githubApp ? " · GitHub App install enabled" : ""}${githubApp?.repositoryClient ? " · repo sync enabled" : ""}${githubApp?.credentialBroker ? " · agent credentials enabled" : ""}${githubApp?.repositoryExecutor ? " · agent execution enabled" : ""}${githubApp?.webhook ? " · webhook enabled" : ""}`));
   server.on("error", async () => { console.error("Cannot start server. Check that PORT is available."); await db?.client.close(); process.exitCode = 1; });
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => {
     server.close(() => { void db?.client.close(); });
