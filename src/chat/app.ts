@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentGitHubCredentialBroker } from "../agents/credential-broker.js";
+import type { AgentJobAuthorizationStore } from "../agents/job-authorizations.js";
+import type { AgentRepositoryExecutor } from "../agents/repository-executor.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
@@ -15,6 +17,7 @@ import type { ChatStore } from "./store.js";
 
 const messageInput = z.object({ content: z.string().trim().min(1).max(4000) }).strict();
 const agentAccessInput = z.object({ enabled: z.boolean() }).strict();
+const agentJobInput = z.object({ repositoryId: z.number().int().positive(), instruction: z.string().trim().min(1).max(12000) }).strict();
 const uuid = z.string().uuid();
 const assets: Record<string, [string, string]> = {
   "/": ["index.html", "text/html"], "/app.js": ["app.js", "text/javascript"], "/style.css": ["style.css", "text/css"],
@@ -37,6 +40,8 @@ export interface GitHubAppRuntime {
   repositoryStore: ConnectedRepositoryStore;
   repositoryClient?: GitHubAppRepositoryClient;
   credentialBroker?: AgentGitHubCredentialBroker;
+  jobStore?: AgentJobAuthorizationStore;
+  repositoryExecutor?: AgentRepositoryExecutor;
   webhook?: GitHubWebhookRuntime;
 }
 
@@ -154,6 +159,7 @@ export function createChatApp(
           githubRepoSyncEnabled: Boolean(auth && githubApp?.repositoryClient),
           githubWebhookEnabled: Boolean(githubApp?.webhook),
           agentCredentialBrokerEnabled: Boolean(githubApp?.credentialBroker),
+          agentExecutionEnabled: Boolean(githubApp?.repositoryExecutor),
         });
       }
 
@@ -303,6 +309,44 @@ export function createChatApp(
         const repository = await githubApp.repositoryStore.setAgentEnabled(user.userId, repositoryId, input.enabled);
         if (!repository) return json({ error: "Repository not found or no longer available." }, 404);
         return json(repository);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/agent-jobs") {
+        if (!auth || !githubApp?.repositoryExecutor || !githubApp.jobStore) {
+          return json({ error: "Agent repository execution is not configured." }, 503);
+        }
+        const user = await sessionUser();
+        if (!user) return json({ error: "Sign in with GitHub to continue." }, 401);
+        let input;
+        try { input = agentJobInput.parse(await request.json()); } catch { return json({ error: "Invalid agent job request." }, 400); }
+        try {
+          const job = await githubApp.repositoryExecutor.createJob({
+            userId: user.userId,
+            repositoryId: input.repositoryId,
+            instruction: input.instruction,
+          });
+          void githubApp.repositoryExecutor.execute(job, input.instruction).catch(error => {
+            console.error("[agent-job] execution failed", {
+              jobId: job.jobId,
+              error: error instanceof Error ? error.message : "AGENT_EXECUTION_FAILED",
+            });
+          });
+          return json(job, 202);
+        } catch (error) {
+          const code = error instanceof Error ? error.message : "AGENT_EXECUTION_FAILED";
+          if (code === "AGENT_REPOSITORY_NOT_AUTHORIZED") return json({ error: "Repository is not authorized for agent work." }, 403);
+          return json({ error: "Agent job could not be created." }, 502);
+        }
+      }
+
+      const agentJobMatch = /^\/api\/agent-jobs\/([0-9a-f-]{36})$/.exec(url.pathname);
+      if (request.method === "GET" && agentJobMatch) {
+        if (!auth || !githubApp?.jobStore) return json({ error: "Agent jobs are not configured." }, 503);
+        const user = await sessionUser();
+        if (!user) return json({ error: "Sign in with GitHub to continue." }, 401);
+        if (!uuid.safeParse(agentJobMatch[1]).success) return json({ error: "Invalid agent job." }, 400);
+        const job = await githubApp.jobStore.get(agentJobMatch[1]!, user.userId);
+        return job ? json(job) : json({ error: "Agent job not found." }, 404);
       }
 
       if (url.pathname.startsWith("/api/chats")) {
