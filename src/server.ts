@@ -64,7 +64,8 @@ async function main() {
       const credentialBroker = repositoryClient
         ? new AgentGitHubCredentialBroker(agentJobStore, repositoryStore, repositoryClient)
         : undefined;
-      const repositoryExecutor = repositoryClient && credentialBroker
+      const executionEnabled = process.env.TAPPD_AGENT_EXECUTION_ENABLED === "1";
+      const repositoryExecutor = executionEnabled && repositoryClient && credentialBroker
         ? new AgentRepositoryExecutor({
             jobs: agentJobStore,
             repositories: repositoryStore,
