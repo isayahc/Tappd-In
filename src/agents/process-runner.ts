@@ -48,7 +48,8 @@ export class NodeCommandRunner implements CommandRunner {
   async run(command: string, args: string[], options: CommandOptions) {
     const timeoutMs = options.timeoutMs ?? 120_000;
     return new Promise<CommandResult>((resolve, reject) => {
-      const child = spawn(command, args, {
+      const executable = process.platform === "win32" && command === "npm" ? "npm.cmd" : command;
+      const child = spawn(executable, args, {
         cwd: options.cwd,
         env: options.env,
         shell: false,
