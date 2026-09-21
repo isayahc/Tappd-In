@@ -44,6 +44,9 @@ export interface GitHubRepositoryCredential {
 
 export interface GitHubAppRepositoryClient {
   listInstallationRepositories(installationId: number): Promise<GitHubInstallationRepository[]>;
+}
+
+export interface GitHubRepositoryHeadClient {
   getRepositoryBranchHead(
     installationId: number,
     repositoryId: number,
@@ -64,7 +67,7 @@ function base64url(value: string | Buffer) {
   return Buffer.from(value).toString("base64url");
 }
 
-export class GitHubAppClient implements GitHubAppRepositoryClient, GitHubInstallationCredentialMinter {
+export class GitHubAppClient implements GitHubAppRepositoryClient, GitHubRepositoryHeadClient, GitHubInstallationCredentialMinter {
   constructor(
     private appId: string,
     private privateKey: string,
