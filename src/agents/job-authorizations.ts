@@ -6,15 +6,36 @@ export interface AgentJobAuthorization {
   jobId: string;
   userId: string;
   repositoryId: number;
+  repositoryFullName?: string;
+  defaultBranch?: string;
+  baseSha?: string;
+  branch?: string;
+  commitSha?: string;
   status: AgentJobStatus;
+  checks?: Array<{ command: string; ok: boolean }>;
+  failure?: string;
   createdAt: Date;
   updatedAt: Date;
+  startedAt?: Date;
+  completedAt?: Date;
+}
+
+export interface CreateAgentJobInput {
+  jobId: string;
+  userId: string;
+  repositoryId: number;
+  repositoryFullName?: string;
+  defaultBranch?: string;
+  baseSha?: string;
+  branch?: string;
 }
 
 export interface AgentJobAuthorizationStore {
   init(): Promise<void>;
-  create(jobId: string, userId: string, repositoryId: number): Promise<AgentJobAuthorization>;
+  create(jobId: string, userId: string, repositoryId: number, metadata?: Omit<CreateAgentJobInput, "jobId" | "userId" | "repositoryId">): Promise<AgentJobAuthorization>;
+  get(jobId: string, userId: string): Promise<AgentJobAuthorization | null>;
   setStatus(jobId: string, userId: string, status: AgentJobStatus): Promise<AgentJobAuthorization | null>;
+  updateExecution(jobId: string, userId: string, patch: Partial<Pick<AgentJobAuthorization, "commitSha" | "checks" | "failure" | "startedAt" | "completedAt">>): Promise<AgentJobAuthorization | null>;
   authorizeCredentialJob(userId: string, jobId: string, repositoryId: number): Promise<AgentJobAuthorization | null>;
 }
 
@@ -25,15 +46,17 @@ export class MongoAgentJobAuthorizationStore implements AgentJobAuthorizationSto
     await Promise.all([
       this.jobs.createIndex({ jobId: 1 }, { unique: true }),
       this.jobs.createIndex({ userId: 1, repositoryId: 1, status: 1 }),
+      this.jobs.createIndex({ userId: 1, createdAt: -1 }),
     ]);
   }
 
-  async create(jobId: string, userId: string, repositoryId: number) {
+  async create(jobId: string, userId: string, repositoryId: number, metadata = {}) {
     const now = new Date();
     const job: AgentJobAuthorization = {
       jobId,
       userId,
       repositoryId,
+      ...metadata,
       status: "queued",
       createdAt: now,
       updatedAt: now,
@@ -42,10 +65,22 @@ export class MongoAgentJobAuthorizationStore implements AgentJobAuthorizationSto
     return structuredClone(job);
   }
 
+  async get(jobId: string, userId: string) {
+    return this.jobs.findOne({ jobId, userId }, { projection: { _id: 0 } });
+  }
+
   async setStatus(jobId: string, userId: string, status: AgentJobStatus) {
     return this.jobs.findOneAndUpdate(
       { jobId, userId },
       { $set: { status, updatedAt: new Date() } },
+      { returnDocument: "after", projection: { _id: 0 } },
+    );
+  }
+
+  async updateExecution(jobId: string, userId: string, patch: Partial<Pick<AgentJobAuthorization, "commitSha" | "checks" | "failure" | "startedAt" | "completedAt">>) {
+    return this.jobs.findOneAndUpdate(
+      { jobId, userId },
+      { $set: { ...patch, updatedAt: new Date() } },
       { returnDocument: "after", projection: { _id: 0 } },
     );
   }
@@ -68,13 +103,14 @@ export class MemoryAgentJobAuthorizationStore implements AgentJobAuthorizationSt
 
   async init() {}
 
-  async create(jobId: string, userId: string, repositoryId: number) {
+  async create(jobId: string, userId: string, repositoryId: number, metadata = {}) {
     if (this.jobs.has(jobId)) throw new Error("Agent job already exists");
     const now = new Date();
     const job: AgentJobAuthorization = {
       jobId,
       userId,
       repositoryId,
+      ...metadata,
       status: "queued",
       createdAt: now,
       updatedAt: now,
@@ -83,10 +119,23 @@ export class MemoryAgentJobAuthorizationStore implements AgentJobAuthorizationSt
     return structuredClone(job);
   }
 
+  async get(jobId: string, userId: string) {
+    const job = this.jobs.get(jobId);
+    return job?.userId === userId ? structuredClone(job) : null;
+  }
+
   async setStatus(jobId: string, userId: string, status: AgentJobStatus) {
     const job = this.jobs.get(jobId);
     if (!job || job.userId !== userId) return null;
     const updated = { ...job, status, updatedAt: new Date() };
+    this.jobs.set(jobId, updated);
+    return structuredClone(updated);
+  }
+
+  async updateExecution(jobId: string, userId: string, patch: Partial<Pick<AgentJobAuthorization, "commitSha" | "checks" | "failure" | "startedAt" | "completedAt">>) {
+    const job = this.jobs.get(jobId);
+    if (!job || job.userId !== userId) return null;
+    const updated = { ...job, ...structuredClone(patch), updatedAt: new Date() };
     this.jobs.set(jobId, updated);
     return structuredClone(updated);
   }
