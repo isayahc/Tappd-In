@@ -7,7 +7,7 @@ import type { AgentJobAuthorization, AgentJobAuthorizationStore } from "./job-au
 import type { CommandRunner } from "./process-runner.js";
 import { workspaceEnvironment } from "./process-runner.js";
 import type { RepositoryAgent } from "./opencode-repository-agent.js";
-import type { GitHubAppRepositoryClient } from "../github/app-client.js";
+import type { GitHubRepositoryHeadClient } from "../github/app-client.js";
 import type { ConnectedRepositoryStore } from "../github/repositories.js";
 
 export interface CreateRepositoryJobInput {
@@ -19,7 +19,7 @@ export interface CreateRepositoryJobInput {
 export interface RepositoryExecutionRuntime {
   jobs: AgentJobAuthorizationStore;
   repositories: ConnectedRepositoryStore;
-  github: GitHubAppRepositoryClient;
+  github: GitHubRepositoryHeadClient;
   credentials: AgentGitHubCredentialBroker;
   commands: CommandRunner;
   agent: RepositoryAgent;
