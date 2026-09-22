@@ -10,19 +10,36 @@ import type { CommandOptions, CommandResult, CommandRunner } from "../src/agents
 import { AgentRepositoryExecutor } from "../src/agents/repository-executor.js";
 import type {
   GitHubAppRepositoryClient,
+  GitHubPullRequestClient,
   GitHubRepositoryHeadClient,
   GitHubInstallationCredentialMinter,
   GitHubInstallationRepository,
 } from "../src/github/app-client.js";
 import { MemoryConnectedRepositoryStore } from "../src/github/repositories.js";
 
-class FakeGitHub implements GitHubAppRepositoryClient, GitHubRepositoryHeadClient, GitHubInstallationCredentialMinter {
+class FakeGitHub implements GitHubAppRepositoryClient, GitHubRepositoryHeadClient, GitHubPullRequestClient, GitHubInstallationCredentialMinter {
   mints = 0;
+  pullRequests: Array<{
+    installationId: number;
+    repositoryId: number;
+    fullName: string;
+    input: { title: string; body: string; head: string; base: string };
+  }> = [];
+
   async listInstallationRepositories(): Promise<GitHubInstallationRepository[]> { return []; }
   async getRepositoryBranchHead() { return "a".repeat(40); }
   async mintRepositoryCredential() {
     this.mints++;
     return { token: `token-${this.mints}`, expiresAt: new Date(Date.now() + 60 * 60 * 1000) };
+  }
+  async createRepositoryPullRequest(
+    installationId: number,
+    repositoryId: number,
+    fullName: string,
+    input: { title: string; body: string; head: string; base: string },
+  ) {
+    this.pullRequests.push({ installationId, repositoryId, fullName, input });
+    return { number: 42, url: "https://github.com/alice/project/pull/42" };
   }
 }
 
@@ -38,6 +55,7 @@ class FakeRunner implements CommandRunner {
   calls: Array<{ command: string; args: string[]; options: CommandOptions }> = [];
   currentBranch = "";
   failCommand?: string;
+  statusOutput = " M changed.txt\n";
 
   async run(command: string, args: string[], options: CommandOptions): Promise<CommandResult> {
     this.calls.push({ command, args: [...args], options: { ...options, env: options.env ? { ...options.env } : undefined } });
@@ -54,8 +72,9 @@ class FakeRunner implements CommandRunner {
     if (command === "git" && args[0] === "switch") this.currentBranch = args[2]!;
     if (command === "git" && args[0] === "branch") return { code: 0, stdout: this.currentBranch + "\n", stderr: "" };
     if (command === "git" && args[0] === "remote") return { code: 0, stdout: "https://github.com/alice/project.git\n", stderr: "" };
-    if (command === "git" && args[0] === "status") return { code: 0, stdout: " M changed.txt\n", stderr: "" };
+    if (command === "git" && args[0] === "status") return { code: 0, stdout: this.statusOutput, stderr: "" };
     if (command === "git" && args[0] === "rev-parse") return { code: 0, stdout: "b".repeat(40) + "\n", stderr: "" };
+    if (command === "git" && args[0] === "diff") return { code: 0, stdout: " changed.txt | 1 +\n 1 file changed, 1 insertion(+)\n", stderr: "" };
     return { code: 0, stdout: "", stderr: "" };
   }
 }
@@ -82,7 +101,7 @@ async function fixture() {
   return { jobs, repositories, github, credentials, commands, agent, workspaceRoot, executor };
 }
 
-test("job records default branch/base SHA and pushes only its unique agent branch", async () => {
+test("job records base metadata, pushes only its agent branch, and opens a reviewable PR", async () => {
   const state = await fixture();
   const job = await state.executor.createJob({
     userId: "alice",
@@ -92,12 +111,17 @@ test("job records default branch/base SHA and pushes only its unique agent branc
   assert.equal(job.repositoryFullName, "alice/project");
   assert.equal(job.defaultBranch, "main");
   assert.equal(job.baseSha, "a".repeat(40));
+  assert.equal(job.request, "Change the project");
   assert.match(job.branch || "", /^tappd-in\/[0-9a-f-]{36}$/);
   assert.notEqual(job.branch, "main");
 
   const completed = await state.executor.execute(job, "Change the project");
   assert.equal(completed?.status, "completed");
-  assert.equal((await state.jobs.get(job.jobId, "alice"))?.commitSha, "b".repeat(40));
+  const stored = await state.jobs.get(job.jobId, "alice");
+  assert.equal(stored?.commitSha, "b".repeat(40));
+  assert.equal(stored?.pullRequestNumber, 42);
+  assert.equal(stored?.pullRequestUrl, "https://github.com/alice/project/pull/42");
+  assert.match(stored?.summary || "", /changed\.txt/);
 
   const checkout = state.commands.calls.find(call => call.command === "git" && call.args[0] === "checkout");
   assert.deepEqual(checkout?.args, ["checkout", "--detach", "a".repeat(40)]);
@@ -113,6 +137,17 @@ test("job records default branch/base SHA and pushes only its unique agent branc
     .filter(call => call.command === "npm")
     .map(call => `npm ${call.args.join(" ")}`);
   assert.deepEqual(checks, ["npm run check", "npm test", "npm run build"]);
+
+  assert.equal(state.github.pullRequests.length, 1);
+  const pullRequest = state.github.pullRequests[0]!;
+  assert.equal(pullRequest.installationId, 55);
+  assert.equal(pullRequest.repositoryId, 101);
+  assert.equal(pullRequest.fullName, "alice/project");
+  assert.equal(pullRequest.input.head, job.branch);
+  assert.equal(pullRequest.input.base, "main");
+  assert.match(pullRequest.input.body, /Change the project/);
+  assert.match(pullRequest.input.body, /npm test/);
+  assert.match(pullRequest.input.body, /Human review is required/);
 
   assert.equal(state.agent.workspaces.length, 1);
   await assert.rejects(access(state.agent.workspaces[0]!));
@@ -147,7 +182,7 @@ test("one job cannot be created for an unauthorized second repository", async ()
   }]);
   await assert.rejects(
     state.executor.createJob({ userId: "alice", repositoryId: 202, instruction: "Change other repo" }),
-    /AGENT_REPOSITORY_NOT_AUTHORIZED/,
+    /AGENT_(REPOSITORY_NOT_AUTHORIZED|POLICY_DENIED)/,
   );
 });
 
@@ -162,11 +197,38 @@ test("failed checks persist sanitized failure and clean the workspace without pu
   assert.equal(stored?.failure, "AGENT_CHECK_FAILED");
   assert.equal(stored?.checks?.at(-1)?.ok, false);
   assert.equal(state.commands.calls.some(call => call.command === "git" && call.args[0] === "push"), false);
+  assert.equal(state.github.pullRequests.length, 0);
   await assert.rejects(access(state.agent.workspaces[0]!));
   assert.equal(JSON.stringify(stored).includes("token-"), false);
 });
 
-test("branch or remote tampering is rejected before commit/push", async () => {
+test("default repository policy denies workflow modification even when the agent requests it", async () => {
+  const state = await fixture();
+  const [repository] = await state.repositories.listForUser("alice");
+  assert.equal(repository?.agentPolicy?.createBranch, true);
+  assert.equal(repository?.agentPolicy?.commit, true);
+  assert.equal(repository?.agentPolicy?.pushAgentBranch, true);
+  assert.equal(repository?.agentPolicy?.openPullRequest, true);
+  assert.equal(repository?.agentPolicy?.directPushDefaultBranch, false);
+  assert.equal(repository?.agentPolicy?.mergePullRequests, false);
+  assert.equal(repository?.agentPolicy?.modifyWorkflows, false);
+
+  state.commands.statusOutput = "?? .github/workflows/ci.yml\n";
+  const job = await state.executor.createJob({
+    userId: "alice",
+    repositoryId: 101,
+    instruction: "Please change the CI workflow",
+  });
+  await assert.rejects(state.executor.execute(job, "Please change the CI workflow"), /AGENT_WORKFLOW_MODIFICATION_DENIED/);
+
+  const stored = await state.jobs.get(job.jobId, "alice");
+  assert.equal(stored?.failure, "AGENT_WORKFLOW_MODIFICATION_DENIED");
+  assert.equal(state.commands.calls.some(call => call.command === "git" && call.args[0] === "commit"), false);
+  assert.equal(state.commands.calls.some(call => call.command === "git" && call.args[0] === "push"), false);
+  assert.equal(state.github.pullRequests.length, 0);
+});
+
+test("branch tampering is rejected before commit, push, or pull request", async () => {
   const branchState = await fixture();
   const branchJob = await branchState.executor.createJob({ userId: "alice", repositoryId: 101, instruction: "Change it" });
   branchState.commands.run = async function(command, args, options) {
@@ -180,4 +242,5 @@ test("branch or remote tampering is rejected before commit/push", async () => {
   };
   await assert.rejects(branchState.executor.execute(branchJob, "Change it"), /AGENT_BRANCH_CHANGED/);
   assert.equal(branchState.commands.calls.some(call => call.command === "git" && call.args[0] === "push"), false);
+  assert.equal(branchState.github.pullRequests.length, 0);
 });
