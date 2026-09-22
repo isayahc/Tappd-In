@@ -1,6 +1,6 @@
 # Tappd-In
 
-A simple browser chatbot backed by OpenCode, with conversation history in MongoDB. The prospect-research skeleton remains available separately. GitHub sign-in, verified GitHub App installation linking, per-user repository synchronization, and opt-in agent branch execution are available when configured; pull-request automation, public hosting, and live prospect search are still being built.
+A simple browser chatbot backed by OpenCode, with conversation history in MongoDB. The prospect-research skeleton remains available separately. GitHub sign-in, verified GitHub App installation linking, per-user repository synchronization, opt-in agent branch execution, and policy-gated pull-request automation are available when configured; public hosting and live prospect search are still being built.
 
 ## Try the chat immediately
 
@@ -80,7 +80,7 @@ Verified installation links are stored in `github_installations`. Add `GITHUB_AP
 
 Connected repositories are stored in `connected_repositories` using GitHub's stable numeric repository ID, installation ID, full name, default branch, visibility/archive state, and an explicit `agentEnabled` flag. A repository removed from the GitHub App selection is marked disconnected on the next sync and its agent access is forcibly disabled. Archived repositories cannot be enabled. The server-side `authorizeAgentRepository(userId, repositoryId)` guard only returns repositories that belong to the authenticated user, remain connected, are not archived, and have agent access enabled.
 
-The Repositories workspace lets a signed-in user sync from GitHub and enable or disable agent access per repository. The server can now mint job-bound repository-scoped credentials internally, but actual cloning, code modification, branch pushes, and pull requests remain disabled until the agent-execution issues.
+The Repositories workspace lets a signed-in user sync from GitHub and enable or disable agent access per repository. When agent execution is explicitly enabled, authorized jobs use job-bound repository-scoped credentials to clone the selected repository, create an isolated `tappd-in/<job-id>` branch, make changes, run checks, push that branch, and open a reviewable pull request.
 
 ### Agent GitHub credential broker
 
