@@ -34,7 +34,7 @@ MONGODB_DB=tappd_in
 
 Both `mongodb://` and `mongodb+srv://` connection strings are supported. Do not commit `.env`, since it may contain database credentials. For an optional local MongoDB, run `docker compose up -d --wait`.
 
-Set `OPENCODE_MODEL=provider/model` if you want a specific model; otherwise the OpenCode default is used. Run `opencode models` to see available IDs. The provider must already be authenticated in OpenCode (use `opencode auth login` if needed).
+Tappd-In defaults to `opencode/big-pickle` when `OPENCODE_MODEL` is blank or unset. OpenCode currently offers Big Pickle at no token charge for a limited time, so free availability is not guaranteed permanently. To override it, set `OPENCODE_MODEL=provider/model` and run `opencode models` to see available IDs. Provider-backed overrides must already be authenticated in OpenCode (use `opencode auth login` if needed).
 
 Start the OpenCode-backed chat with one command:
 
@@ -105,7 +105,7 @@ If a webhook is missed, the existing **Sync from GitHub** action (or `POST /api/
 ### Troubleshooting
 
 - **Startup failed:** check that `MONGODB_URI` is present and reachable, then check whether port 3000 is free. Use `npm run chat:demo` to isolate UI setup without MongoDB.
-- **Reply failed:** run `npm run chat:start`; it starts OpenCode with web search enabled and reports if the service is unavailable. Your unsent text stays in the composer for retry.
+- **Reply failed:** run `npm run chat:start`; it starts OpenCode with web search enabled and reports if the service is unavailable. If Big Pickle's free allowance is temporarily unavailable or exhausted, retry later or set `OPENCODE_MODEL` to another model you can access. Your unsent text stays in the composer for retry.
 - **Port conflict:** change `PORT` in `.env`. If changing the OpenCode port, change `OPENCODE_URL` too.
 - **Demo shown unexpectedly:** stop `chat:demo` and use `npm run chat:opencode` for actual model replies.
 

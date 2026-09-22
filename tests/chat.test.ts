@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createChatApp } from "../src/chat/app.js";
-import { DemoChatProvider, OpenCodeChatProvider } from "../src/chat/provider.js";
+import { DemoChatProvider, OpenCodeChatError, OpenCodeChatProvider } from "../src/chat/provider.js";
 import { MemoryChatStore } from "../src/chat/store.js";
 
 function browser(app: ReturnType<typeof createChatApp>) {
@@ -63,6 +63,64 @@ test("chat persistence stores the OpenCode session mapping", async () => {
   assert.deepEqual(calls, [undefined, "session-for-chat"]);
   assert.equal((await (await request(`/api/chats/${chat.id}`)).json()).opencodeSessionId, "session-for-chat");
 });
+test("OpenCode defaults to Big Pickle when OPENCODE_MODEL is unset", async () => {
+  const calls: { path: string; body: any }[] = [];
+  const fakeFetch: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    const path = new URL(request.url).pathname;
+    const body = request.method === "POST" ? await request.json() : null;
+    calls.push({ path, body });
+    if (path.endsWith("/message")) return Response.json({ info: {}, parts: [{ type: "text", text: "Default model reply" }] });
+    return Response.json({ id: "session-default-model" });
+  };
+  const provider = new OpenCodeChatProvider({ OPENCODE_URL: "http://localhost:4096" }, fakeFetch);
+  const reply = await provider.reply([{ role: "user", content: "Hello" }]);
+  assert.equal(reply.content, "Default model reply");
+  assert.deepEqual(calls.find(call => call.path.endsWith("/message"))?.body.model, {
+    providerID: "opencode",
+    modelID: "big-pickle",
+  });
+});
+
+test("OpenCode surfaces sanitized model availability failures", async () => {
+  const fakeFetch: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    if (new URL(request.url).pathname.endsWith("/message")) {
+      throw new Error("free usage exceeded: internal provider detail");
+    }
+    return Response.json({ id: "session-model-unavailable" });
+  };
+  const provider = new OpenCodeChatProvider({ OPENCODE_URL: "http://localhost:4096" }, fakeFetch);
+  await assert.rejects(
+    provider.reply([{ role: "user", content: "Hello" }]),
+    (error: unknown) => {
+      assert.ok(error instanceof OpenCodeChatError);
+      assert.equal(error.kind, "model_unavailable");
+      assert.match(error.message, /free usage limit/i);
+      assert.doesNotMatch(error.message, /internal provider detail/i);
+      return true;
+    },
+  );
+});
+
+test("chat surfaces safe OpenCode availability errors", async () => {
+  const app = createChatApp(new MemoryChatStore(), {
+    reply: async () => {
+      throw new OpenCodeChatError(
+        "The configured OpenCode model is temporarily unavailable or its free usage limit has been reached. Try again later or set OPENCODE_MODEL to another model you can access.",
+        "model_unavailable",
+      );
+    },
+  }, false, 3000);
+  const request = browser(app);
+  const chat = await (await request("/api/chats", {})).json();
+  const response = await request(`/api/chats/${chat.id}/messages`, { content: "hello" });
+  assert.equal(response.status, 502);
+  const body = await response.json();
+  assert.match(body.error, /free usage limit/i);
+  assert.doesNotMatch(body.error, /MongoDB/i);
+});
+
 test("OpenCode maps a chat to one persistent session", async () => {
   const calls: { path: string; method: string; body: any }[] = [];
   const fakeFetch: typeof fetch = async (input, init) => {

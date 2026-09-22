@@ -10,7 +10,7 @@ import type { GitHubAppRepositoryClient } from "../github/app-client.js";
 import type { GitHubInstallationStore } from "../github/installations.js";
 import type { ConnectedRepositoryStore } from "../github/repositories.js";
 import { handleGitHubWebhook, type GitHubWebhookRuntime } from "../github/webhooks.js";
-import type { ChatProvider } from "./provider.js";
+import { OpenCodeChatError, type ChatProvider } from "./provider.js";
 import type { ChatStore } from "./store.js";
 
 const messageInput = z.object({ content: z.string().trim().min(1).max(4000) }).strict();
@@ -332,7 +332,7 @@ export function createChatApp(
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           console.error("[chat] reply failed", { chatId: chat.id, error: message });
-          const userError = message.startsWith("OpenCode server is unreachable")
+          const userError = error instanceof OpenCodeChatError || message.startsWith("OpenCode server is unreachable")
             ? message
             : "Reply failed. Check MongoDB, your OpenCode server, and model access, then try again.";
           return json({ error: userError }, 502);
