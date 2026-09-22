@@ -41,8 +41,11 @@ class NoopVerifier implements GitHubInstallationVerifier {
     return url.toString();
   }
 
-  async verifyInstallationCode() {
-    throw new Error("not used in agent-job e2e");
+  async verifyInstallationCode(_code: string, _callbackUrl: string, _installationId: number) {
+    return {
+      profile: { id: 100, login: "alice" },
+      installation: null,
+    };
   }
 }
 
