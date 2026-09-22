@@ -1,6 +1,6 @@
 # Tappd-In
 
-A simple browser chatbot backed by OpenCode, with conversation history in MongoDB. The prospect-research skeleton remains available separately. GitHub sign-in, verified GitHub App installation linking, and per-user repository synchronization are available when configured; agent execution, public hosting, and live prospect search are not implemented.
+A simple browser chatbot backed by OpenCode, with conversation history in MongoDB. The prospect-research skeleton remains available separately. GitHub sign-in, verified GitHub App installation linking, per-user repository synchronization, and opt-in agent branch execution are available when configured; pull-request automation, public hosting, and live prospect search are still being built.
 
 ## Try the chat immediately
 
@@ -91,6 +91,36 @@ Before minting a credential, the broker checks both an active `agent_jobs` recor
 GitHub installation credentials are minted for exactly one `repository_id` with only `contents: write` and `pull_requests: write`. GitHub installation tokens expire after one hour; Tappd-In keeps them only in process memory and refreshes when fewer than five minutes remain. No installation token, user PAT, or GitHub App private key is written to MongoDB or returned to the browser.
 
 The current `agent_jobs` record is deliberately minimal: job ID, user ID, repository ID, status, and timestamps. The isolated execution issue extends that same collection with base SHA, branch, workspace, test, and execution metadata.
+
+### Agent repository execution
+
+Repository execution is deliberately opt-in. Set `TAPPD_AGENT_EXECUTION_ENABLED=1` only on a worker/server where repository code is allowed to run. `TAPPD_AGENT_WORKSPACE_ROOT` can override the default OS-temp workspace root.
+
+Creating `POST /api/agent-jobs` with an authorized `repositoryId` and instruction records the repository full name, default branch, the default branch's current Git SHA, and a generated `tappd-in/<job-id>` branch before execution starts. `GET /api/agent-jobs/<job-id>` returns only jobs owned by the signed-in user.
+
+The execution path is:
+
+```text
+authorize repository
+  -> record default branch + base SHA
+  -> create ephemeral per-job workspace
+  -> clone with job-bound repo credential
+  -> checkout recorded base SHA
+  -> create tappd-in/<job-id>
+  -> OpenCode edits inside that workspace
+  -> verify branch + origin were not changed
+  -> run detected npm check/test/build scripts
+  -> commit as Tappd-In Agent
+  -> push HEAD only to refs/heads/tappd-in/<job-id>
+  -> invalidate credential cache
+  -> delete workspace
+```
+
+GitHub tokens are injected only into the clone/push child-process environment and never appear in git command arguments, job records, or browser responses. The default branch is never a push target and the executor never uses force-push.
+
+OpenCode receives the job directory as its active directory, file read/edit/search tools, and only a narrow read-only Git shell allowlist (`git status`, `git diff`, `git log`, `git grep`). It is denied external-directory access and cannot run commit/push commands. OpenCode's shell is not an OS sandbox, so arbitrary shell access is intentionally not enabled. Repository checks are fixed Tappd-In subprocesses with a scrubbed environment; they still execute repository-owned npm scripts on the host, which is why execution requires the explicit opt-in flag.
+
+Failed jobs persist only status, check pass/fail metadata, timestamps, and a small sanitized failure code. Workspaces and in-memory credentials are cleaned in a `finally` path.
 
 ### GitHub webhook reconciliation
 
