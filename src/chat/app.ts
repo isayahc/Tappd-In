@@ -334,7 +334,9 @@ export function createChatApp(
           return json(job, 202);
         } catch (error) {
           const code = error instanceof Error ? error.message : "AGENT_EXECUTION_FAILED";
-          if (code === "AGENT_REPOSITORY_NOT_AUTHORIZED") return json({ error: "Repository is not authorized for agent work." }, 403);
+          if (code === "AGENT_REPOSITORY_NOT_AUTHORIZED" || code === "AGENT_POLICY_DENIED") {
+            return json({ error: "Repository is not authorized for agent work." }, 403);
+          }
           return json({ error: "Agent job could not be created." }, 502);
         }
       }
