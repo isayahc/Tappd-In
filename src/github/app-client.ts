@@ -19,6 +19,10 @@ const repositoriesResponse = z.object({
 const gitRefResponse = z.object({
   object: z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/i) }),
 });
+const pullRequestResponse = z.object({
+  number: z.number().int().positive(),
+  html_url: z.string().url(),
+});
 
 export interface GitHubInstallationRepository {
   repositoryId: number;
@@ -42,6 +46,11 @@ export interface GitHubRepositoryCredential {
   expiresAt: Date;
 }
 
+export interface GitHubPullRequestResult {
+  number: number;
+  url: string;
+}
+
 export interface GitHubAppRepositoryClient {
   listInstallationRepositories(installationId: number): Promise<GitHubInstallationRepository[]>;
 }
@@ -53,6 +62,15 @@ export interface GitHubRepositoryHeadClient {
     fullName: string,
     branch: string,
   ): Promise<string>;
+}
+
+export interface GitHubPullRequestClient {
+  createRepositoryPullRequest(
+    installationId: number,
+    repositoryId: number,
+    fullName: string,
+    input: { title: string; body: string; head: string; base: string },
+  ): Promise<GitHubPullRequestResult>;
 }
 
 export interface GitHubInstallationCredentialMinter {
@@ -67,7 +85,17 @@ function base64url(value: string | Buffer) {
   return Buffer.from(value).toString("base64url");
 }
 
-export class GitHubAppClient implements GitHubAppRepositoryClient, GitHubRepositoryHeadClient, GitHubInstallationCredentialMinter {
+function validateRepositoryName(fullName: string) {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(fullName)) throw new Error("INVALID_GITHUB_REPOSITORY_NAME");
+}
+
+function validateBranch(branch: string) {
+  if (!branch || branch.includes("..") || branch.startsWith("/") || branch.endsWith("/")) {
+    throw new Error("INVALID_GITHUB_BRANCH");
+  }
+}
+
+export class GitHubAppClient implements GitHubAppRepositoryClient, GitHubRepositoryHeadClient, GitHubPullRequestClient, GitHubInstallationCredentialMinter {
   constructor(
     private appId: string,
     private privateKey: string,
@@ -140,8 +168,8 @@ export class GitHubAppClient implements GitHubAppRepositoryClient, GitHubReposit
     fullName: string,
     branch: string,
   ) {
-    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(fullName)) throw new Error("INVALID_GITHUB_REPOSITORY_NAME");
-    if (!branch || branch.includes("..") || branch.startsWith("/") || branch.endsWith("/")) throw new Error("INVALID_GITHUB_BRANCH");
+    validateRepositoryName(fullName);
+    validateBranch(branch);
     const credential = await this.mintRepositoryCredential(installationId, repositoryId, { contents: "read" });
     const ref = branch.split("/").map(encodeURIComponent).join("/");
     const response = await this.request(
@@ -156,6 +184,34 @@ export class GitHubAppClient implements GitHubAppRepositoryClient, GitHubReposit
     );
     if (!response.ok) throw new Error("GITHUB_BRANCH_HEAD_LOOKUP_FAILED");
     return gitRefResponse.parse(await response.json()).object.sha;
+  }
+
+  async createRepositoryPullRequest(
+    installationId: number,
+    repositoryId: number,
+    fullName: string,
+    input: { title: string; body: string; head: string; base: string },
+  ) {
+    validateRepositoryName(fullName);
+    validateBranch(input.head);
+    validateBranch(input.base);
+    const credential = await this.mintRepositoryCredential(installationId, repositoryId, {
+      contents: "read",
+      pull_requests: "write",
+    });
+    const response = await this.request(`https://api.github.com/repos/${fullName}/pulls`, {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${credential.token}`,
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2026-03-10",
+      },
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) throw new Error("GITHUB_PULL_REQUEST_CREATE_FAILED");
+    const pullRequest = pullRequestResponse.parse(await response.json());
+    return { number: pullRequest.number, url: pullRequest.html_url };
   }
 
   async listInstallationRepositories(installationId: number) {

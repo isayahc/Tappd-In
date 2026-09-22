@@ -10,7 +10,11 @@ export interface AgentJobAuthorization {
   defaultBranch?: string;
   baseSha?: string;
   branch?: string;
+  request?: string;
   commitSha?: string;
+  summary?: string;
+  pullRequestNumber?: number;
+  pullRequestUrl?: string;
   status: AgentJobStatus;
   checks?: Array<{ command: string; ok: boolean }>;
   failure?: string;
@@ -28,14 +32,27 @@ export interface CreateAgentJobInput {
   defaultBranch?: string;
   baseSha?: string;
   branch?: string;
+  request?: string;
 }
+
+type AgentJobExecutionPatch = Partial<Pick<
+  AgentJobAuthorization,
+  | "commitSha"
+  | "summary"
+  | "pullRequestNumber"
+  | "pullRequestUrl"
+  | "checks"
+  | "failure"
+  | "startedAt"
+  | "completedAt"
+>>;
 
 export interface AgentJobAuthorizationStore {
   init(): Promise<void>;
   create(jobId: string, userId: string, repositoryId: number, metadata?: Omit<CreateAgentJobInput, "jobId" | "userId" | "repositoryId">): Promise<AgentJobAuthorization>;
   get(jobId: string, userId: string): Promise<AgentJobAuthorization | null>;
   setStatus(jobId: string, userId: string, status: AgentJobStatus): Promise<AgentJobAuthorization | null>;
-  updateExecution(jobId: string, userId: string, patch: Partial<Pick<AgentJobAuthorization, "commitSha" | "checks" | "failure" | "startedAt" | "completedAt">>): Promise<AgentJobAuthorization | null>;
+  updateExecution(jobId: string, userId: string, patch: AgentJobExecutionPatch): Promise<AgentJobAuthorization | null>;
   authorizeCredentialJob(userId: string, jobId: string, repositoryId: number): Promise<AgentJobAuthorization | null>;
 }
 
@@ -77,7 +94,7 @@ export class MongoAgentJobAuthorizationStore implements AgentJobAuthorizationSto
     );
   }
 
-  async updateExecution(jobId: string, userId: string, patch: Partial<Pick<AgentJobAuthorization, "commitSha" | "checks" | "failure" | "startedAt" | "completedAt">>) {
+  async updateExecution(jobId: string, userId: string, patch: AgentJobExecutionPatch) {
     return this.jobs.findOneAndUpdate(
       { jobId, userId },
       { $set: { ...patch, updatedAt: new Date() } },
@@ -132,7 +149,7 @@ export class MemoryAgentJobAuthorizationStore implements AgentJobAuthorizationSt
     return structuredClone(updated);
   }
 
-  async updateExecution(jobId: string, userId: string, patch: Partial<Pick<AgentJobAuthorization, "commitSha" | "checks" | "failure" | "startedAt" | "completedAt">>) {
+  async updateExecution(jobId: string, userId: string, patch: AgentJobExecutionPatch) {
     const job = this.jobs.get(jobId);
     if (!job || job.userId !== userId) return null;
     const updated = { ...job, ...structuredClone(patch), updatedAt: new Date() };
